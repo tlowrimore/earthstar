@@ -409,3 +409,30 @@ export interface IStorage {
     // Find out if the storage is closed.
     isClosed() : boolean;
 }
+
+export interface IStorageAsync {
+    workspace: WorkspaceAddress;
+    onWrite: Emitter<WriteEvent>;
+    onChange: Emitter<undefined>;
+
+    // QUERYING
+    documents(query?: QueryOpts): Promise<Document[]>;
+    paths(query?: QueryOpts): Promise<string[]>;
+    contents(query?: QueryOpts): Promise<string[]>;
+    authors(now?: number): Promise<AuthorAddress[]>;
+
+    // INDIVIDUAL DOCUMENT LOOKUP
+    getDocument(path: string, now?: number): Promise<Document | undefined>;
+    getContent(path: string, now?: number): Promise<string | undefined>;
+
+    // WRITING
+    set(keypair: AuthorKeypair, docToSet: DocToSet, now?: number): Promise<WriteResult | ValidationError>;
+    ingestDocument(doc: Document, now?: number, isLocal?: boolean): Promise<WriteResult | ValidationError>;
+
+    // SYNC
+    //_syncFrom(otherStore: IStorageAsync, existing: boolean, live: boolean): Promise<number>;
+    //sync(otherStore: IStorageAsync, opts?: SyncOpts): Promise<SyncResults>;
+
+    close() : Promise<void>;
+    isClosed() : boolean;
+}
