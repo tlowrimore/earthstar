@@ -5,7 +5,6 @@ import {
     DocToSet,
     Document,
     IValidator,
-    QueryOpts,
     StorageIsClosedError,
     ValidationError,
     WorkspaceAddress,
@@ -15,20 +14,35 @@ import {
 } from '../util/types';
 import { sha256base32 } from '../crypto/crypto';
 import { Emitter } from '../util/emitter';
+import { ValidatorEs4 } from '../validator/es4';
+import { queryMatchesDoc, defaultQuery2, QueryOpts2 } from './query2';
 
-class ICommonStorage {
+//================================================================================
+
+export let _historySortFn = (a: Document, b: Document): number => {
+    // When used within one path's documents, puts the winning version first.
+    // path ASC (abcd), then timestamp DESC (newest first), then signature DESC (to break timestamp ties)
+    if (a.path > b.path) { return 1; }
+    if (a.path < b.path) { return -1; }
+    if (a.timestamp < b.timestamp) { return 1; }
+    if (a.timestamp > b.timestamp) { return -1; }
+    if (a.signature < b.signature) { return 1; }
+    if (a.signature > b.signature) { return -1; }
+    return 0;
+};
+
+//================================================================================
+
+class MegaStorage {
     workspace : WorkspaceAddress;
     validatorMap : {[format: string] : IValidator};
     onWrite : Emitter<WriteEvent>;
     onChange : Emitter<undefined>;  // deprecated
 
     _now: number | null = null; // used for testing
-    _subStorage: ISubStorage;
     _isClosed: boolean = false;
 
-    constructor(subStorage: ISubStorage, workspace: WorkspaceAddress, validators: IValidator[]) {
-        this._subStorage = subStorage;
-
+    constructor(validators: IValidator[], workspace: WorkspaceAddress) {
         if (validators.length === 0) {
             throw new Error('must provide at least one validator');
         }
@@ -51,24 +65,24 @@ class ICommonStorage {
     // GET DATA OUT
     listAuthors(): AuthorAddress[] {
         this._assertNotClosed();
-        return this._subStorage.listAuthors();
+        return this.onListAuthors();
     }
-    paths(query?: QueryOpts): string[] {
+    paths(query: QueryOpts2 = {}): string[] {
         this._assertNotClosed();
-        return this._subStorage.pathQuery(query);
+        return this.onPathQuery(query);
     }
-    documents(query?: QueryOpts): Document[] {
+    documents(query: QueryOpts2 = {}): Document[] {
         this._assertNotClosed();
-        return this._subStorage.documentQuery(query);
+        return this.onDocumentQuery(query);
     }
-    contents(query?: QueryOpts): string[] {
+    contents(query: QueryOpts2 = {}): string[] {
         this._assertNotClosed();
-        return this._subStorage.documentQuery(query)
+        return this.onDocumentQuery(query)
             .map(doc => doc.content);
     }
     latestDocument(path: string): Document | undefined {
         this._assertNotClosed();
-        let doc = this._subStorage.documentQuery({ path: path, includeHistory: false });
+        let doc = this.onDocumentQuery({ path: path, isHead: true });
         return doc.length === 0 ? undefined : doc[0];
     }
     latestContent(path: string): string | undefined {
@@ -99,9 +113,9 @@ class ICommonStorage {
         // BEGIN LOCK
 
         // get existing doc from same author, same path
-        let existingSameAuthor : Document | undefined = this._subStorage.documentQuery({
+        let existingSameAuthor : Document | undefined = this.onDocumentQuery({
             path: doc.path,
-            versionsByAuthor: doc.author,
+            author: doc.author,
         })[0];
 
         // if the existing doc from same author is expired, it should be deleted.
@@ -125,7 +139,7 @@ class ICommonStorage {
         }
 
         // upsert, replacing old doc if there is one
-        this._subStorage.upsertDocument(doc);
+        this.onUpsertDocument(doc);
 
         // read it again to see if it's the new latest doc
         let latestDoc = this.latestDocument(doc.path);
@@ -210,7 +224,7 @@ class ICommonStorage {
     // CLOSE
     close() : void {
         this._isClosed = true;
-        this._subStorage.close();
+        this.onClose();
     }
     _assertNotClosed() : void {
         if (this._isClosed) { throw new StorageIsClosedError(); }
@@ -218,14 +232,98 @@ class ICommonStorage {
     isClosed() : boolean {
         return this._isClosed;
     }
+    //================================================================================
+    // subclasses should implement these
+    onListAuthors(): AuthorAddress[] { return []; }
+    onPathQuery(query: QueryOpts2 = {}): string[] { return []; }
+    onDocumentQuery(query: QueryOpts2 = {}): Document[] { return []; }
+    onUpsertDocument(doc: Document): void {}
+    onClose(): void {}
 }
 
-interface ISubStorage {
-    // subStorage does no validation
-    // subStorage is responsible for freezing documents
-    listAuthors(): AuthorAddress[];
-    pathQuery(query?: QueryOpts): string[];
-    documentQuery(query?: QueryOpts): Document[];
-    upsertDocument(doc: Document): void;
-    close(): void;
+//================================================================================
+
+class MegaStorageMemory extends MegaStorage {
+    _docs: Record<string, Record<string, Document>> = {};  // path, author --> document
+    constructor(validators: IValidator[], workspace: WorkspaceAddress) {
+        super(validators, workspace);
+    }
+    onListAuthors(): AuthorAddress[] {
+        let authorMap: Record<string, boolean> = {};
+        for (let slots of Object.values(this._docs)) {
+            for (let author of Object.keys(slots)) {
+                authorMap[author] = true;
+            }
+        }
+        let authors = Object.keys(authorMap);
+        authors.sort();
+        return authors;
+    }
+    onPathQuery(query: QueryOpts2 = {}): string[] {
+        // query with no limits
+        let docs = this.onDocumentQuery({ ...query, limit: undefined, limitBytes: undefined });
+
+        // get unique paths
+        let pathMap: Record<string, boolean> = {};
+        for (let doc of docs) {
+            pathMap[doc.path] = true;
+        }
+        let paths = Object.keys(pathMap);
+        paths.sort();
+
+        // re-apply limits.  ignore limitBytes
+        if (query.limit) {
+            paths = paths.slice(query.limit);
+        }
+
+        return paths;
+    }
+    onDocumentQuery(query: QueryOpts2 = {}): Document[] {
+        // apply defaults to query
+        query = { ...defaultQuery2, ...query, }
+
+        if (query.limit === 0 || query.limitBytes === 0) { return []; }
+
+        let results : Document[] = [];
+
+        for (let pathSlots of Object.values(this._docs)) {
+            // within one path...
+            let docsThisPath = Object.values(pathSlots);
+            // only keep head?
+            if (query.isHead) {
+                docsThisPath.sort(_historySortFn);
+                docsThisPath = [docsThisPath[0]];
+            }
+            // apply the rest of the individual query selectors: path, timestamp, author, contentSize
+            docsThisPath = docsThisPath.filter(d => queryMatchesDoc(query, d));
+            results = results.concat(docsThisPath);
+        }
+
+        results.sort(_historySortFn);
+
+        // apply limit and limitBytes
+        if (query.limit) {
+            results = results.slice(query.limit);
+        }
+        if (query.limitBytes) {
+            let b = 0;
+            for (let ii = 0; ii < results.length; ii++) {
+                let doc = results[ii];
+                b += doc.content.length;
+                if (b > query.limitBytes) {
+                    results = results.slice(ii);
+                    break;
+                }
+            }
+        }
+
+        return results;
+    }
+    onUpsertDocument(doc: Document): void {}
+    onClose(): void {}
 }
+
+//================================================================================
+
+let storage = new MegaStorageMemory([ValidatorEs4], '+gardening.xxxx');
+

@@ -13,4 +13,11 @@ export let sleep = async (ms : number) : Promise<void> => {
     return new Promise((resolve, reject) => {
         setTimeout(resolve, ms);
     });
+
+export let uniq = (items: string[]) : string[] => {
+    let map : Record<string, boolean> = {};
+    for (let item of items) {
+        map[item] = true;
+    }
+    return Object.keys(map);
 }
