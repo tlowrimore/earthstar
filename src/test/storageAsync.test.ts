@@ -23,7 +23,7 @@ import {
 import { ValidatorEs4 } from '../validator/es4';
 import { StorageMemory } from '../storage/memory';
 import { StorageSqlite } from '../storage/sqlite';
-import { StorageSyncToAsync } from '../storage/storageToAsync';
+import { StorageSyncToAsync } from '../storage/syncToAsync';
 import { logTest } from '../util/log';
 
 //================================================================================
