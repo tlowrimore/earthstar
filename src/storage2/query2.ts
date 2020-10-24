@@ -1,9 +1,23 @@
-import { AuthorAddress, Document } from '../util/types';
+import {
+    AuthorAddress,
+    Document
+} from '../util/types';
 
+/*
+open questions
+
+    when doing paths(query), is it...
+    * doing a cheap query only on the paths column, using path and pathPrefix?
+    * or doing a full query also using author, timestamp, etc, then getting unique paths?
+
+    isHead: rename to includeAll?  we rarely want to exclude heads
+
+*/
 export interface QueryOpts2 {
     path?: string,
     pathPrefix?: string,
 
+    timestamp?: number,
     timestamp_gt?: number,
     timestamp_lt?: number,
 
@@ -13,22 +27,38 @@ export interface QueryOpts2 {
     contentSize_gt?: number,
     contentSize_lt?: number,
 
-    isHead?: boolean,
+    isHead?: boolean,  // true to only get head, omit to get all
 
     limit?: number,
-    limitBytes?: number,
+    limitBytes?: number,  // sum of content bytes <= limitBytes
 
-    // continueAfter: [path, timestamp, ...signature? author? hash?]
+    // sort?: 'newest' | 'oldest' | 'path',  // default is path
+    // continueAfter: {path, timestamp, ...signature? author? hash?}
 };
 
-export const defaultQuery2 = {
-    isHead: false,
+const defaultQuery2 = {
+    // isHead: false,
+    // sort: 'path',
+}
+
+export let cleanUpQuery = (query: QueryOpts2): QueryOpts2 => {
+    // set defaults
+    let q = {...defaultQuery2, ...query};
+
+    // TODO: what to do with -1 on limit, contentSize?
+    // TODO: what to do with isHead: false?
+
+    //// limits can be zero but not negative
+    //if (q.limit !== undefined) { q.limit = Math.max(q.limit, 0); }
+    //if (q.limitBytes !== undefined) { q.limitBytes = Math.max(q.limitBytes, 0); }
+    return q;
 }
 
 export let queryMatchesDoc = (query: QueryOpts2, doc: Document): boolean => {
     if (query.path !== undefined && !(query.path === doc.path)) { return false; }
     if (query.pathPrefix !== undefined && !(doc.path.startsWith(query.pathPrefix))) { return false; }
 
+    if (query.timestamp !== undefined && !(doc.timestamp === query.timestamp)) { return false; }
     if (query.timestamp_gt !== undefined && !(doc.timestamp > query.timestamp_gt)) { return false; }
     if (query.timestamp_lt !== undefined && !(doc.timestamp < query.timestamp_lt)) { return false; }
 

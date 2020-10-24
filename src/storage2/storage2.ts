@@ -1,4 +1,5 @@
 import { deepEqual } from 'fast-equals';
+
 import {
     AuthorAddress,
     AuthorKeypair,
@@ -11,59 +12,18 @@ import {
     WriteEvent,
     WriteResult,
     isErr,
-    notErr,
 } from '../util/types';
+import {
+    IStorage2,
+    IStorageDriver,
+} from './types2';
 import { sha256base32 } from '../crypto/crypto';
 import { Emitter } from '../util/emitter';
-import { ValidatorEs4 } from '../validator/es4';
-import {
-    QueryOpts2,
-    defaultQuery2,
-    historySortFn,
-    queryMatchesDoc,
-} from './query2';
+import { QueryOpts2 } from './query2';
 
 //================================================================================
 
-interface IMegaStorage {
-    workspace : WorkspaceAddress;
-    onWrite : Emitter<WriteEvent>;
-    onChange : Emitter<undefined>;  // deprecated
-
-    // constructor takes: a driver, a list of validators, and a workspace
-
-    // GET DATA OUT
-    listAuthors(): AuthorAddress[];
-    paths(query?: QueryOpts2): string[];
-    documents(query?: QueryOpts2): Document[];
-    contents(query?: QueryOpts2): string[];
-    latestDocument(path: string): Document | undefined;
-    latestContent(path: string): string | undefined;
-    // PUT DATA IN
-    ingestDocument(doc: Document, isLocal: boolean): WriteResult | ValidationError;
-    set(keypair: AuthorKeypair, docToSet: DocToSet): WriteResult | ValidationError;
-    // CLOSE
-    close(): void;
-    isClosed(): boolean;
-}
-
-interface IStorageDriver {
-    // driver is responsible for actually saving, loading, querying documents
-    // driver is responsible for freezing documents
-    // driver does no validation
-    // driver does not check if what's being stored is reasonable
-    // driver doesn't make any decisions, that's MegaStorage's job
-    begin(megaStorage: MegaStorage, workspace: WorkspaceAddress): void;
-    listAuthors(): AuthorAddress[];
-    pathQuery(query: QueryOpts2): string[];
-    documentQuery(query: QueryOpts2): Document[];
-    upsertDocument(doc: Document): void;  // overwrite existing doc no matter what
-    close(): void;
-}
-
-//================================================================================
-
-class MegaStorage implements IMegaStorage {
+export class Storage2 implements IStorage2 {
     workspace : WorkspaceAddress;
     onWrite : Emitter<WriteEvent>;
     onChange : Emitter<undefined>;  // deprecated
@@ -87,7 +47,7 @@ class MegaStorage implements IMegaStorage {
             this._validatorMap[validator.format] = validator;
         }
 
-        // check if the workspace is valid
+        // check if the workspace is valid to at least one validator
         let workspaceErrs = validators.map(val => val._checkWorkspaceIsValid(workspace)).filter(err => err !== true);
         if (workspaceErrs.length === validators.length) {
             // every validator had an error
@@ -100,9 +60,9 @@ class MegaStorage implements IMegaStorage {
         this._driver.begin(this, workspace);
     }
     // GET DATA OUT
-    listAuthors(): AuthorAddress[] {
+    authors(): AuthorAddress[] {
         this._assertNotClosed();
-        return this._driver.listAuthors();
+        return this._driver.authors();
     }
     paths(query: QueryOpts2 = {}): string[] {
         this._assertNotClosed();
@@ -207,6 +167,8 @@ class MegaStorage implements IMegaStorage {
 
         let shouldBumpTimestamp = false;
         if (docToSet.timestamp === 0 || docToSet.timestamp === undefined) {
+            // When timestamp is not provided, default to now
+            // and bump if necessary.
             shouldBumpTimestamp = true;
             docToSet.timestamp = now;
         } else {
@@ -263,111 +225,10 @@ class MegaStorage implements IMegaStorage {
         this._isClosed = true;
         this._driver.close();
     }
-    _assertNotClosed(): void {
-        if (this._isClosed) { throw new StorageIsClosedError(); }
-    }
     isClosed(): boolean {
         return this._isClosed;
     }
+    _assertNotClosed(): void {
+        if (this._isClosed) { throw new StorageIsClosedError(); }
+    }
 }
-
-//================================================================================
-
-class MemoryDriver implements IStorageDriver {
-    _docs: Record<string, Record<string, Document>> = {};  // { path: { author: document }}
-    _workspace: WorkspaceAddress = '';
-    _megaStorage: MegaStorage = null as any as MegaStorage;
-    constructor() {
-    }
-    begin(megaStorage: MegaStorage, workspace: WorkspaceAddress): void {
-        this._megaStorage = megaStorage;
-        this._workspace = workspace;
-    }
-    listAuthors(): AuthorAddress[] {
-        let authorMap: Record<string, boolean> = {};
-        for (let slots of Object.values(this._docs)) {
-            for (let author of Object.keys(slots)) {
-                authorMap[author] = true;
-            }
-        }
-        let authors = Object.keys(authorMap);
-        authors.sort();
-        return authors;
-    }
-    pathQuery(query: QueryOpts2): string[] {
-        // query with no limits
-        let docs = this.documentQuery({ ...query, limit: undefined, limitBytes: undefined });
-
-        // get unique paths
-        let pathMap: Record<string, boolean> = {};
-        for (let doc of docs) {
-            pathMap[doc.path] = true;
-        }
-        let paths = Object.keys(pathMap);
-        paths.sort();
-
-        // re-apply limits.  ignore limitBytes
-        if (query.limit) {
-            paths = paths.slice(query.limit);
-        }
-
-        return paths;
-    }
-    documentQuery(query: QueryOpts2): Document[] {
-        // apply defaults to query
-        query = { ...defaultQuery2, ...query, }
-
-        if (query.limit === 0 || query.limitBytes === 0) { return []; }
-
-        let results : Document[] = [];
-
-        for (let pathSlots of Object.values(this._docs)) {
-            // within one path...
-            let docsThisPath = Object.values(pathSlots);
-            // only keep head?
-            if (query.isHead) {
-                docsThisPath.sort(historySortFn);
-                docsThisPath = [docsThisPath[0]];
-            }
-            // apply the rest of the individual query selectors: path, timestamp, author, contentSize
-            docsThisPath = docsThisPath.filter(d => queryMatchesDoc(query, d));
-            results = results.concat(docsThisPath);
-        }
-
-        results.sort(historySortFn);
-
-        // apply limit and limitBytes
-        if (query.limit) {
-            results = results.slice(query.limit);
-        }
-        if (query.limitBytes) {
-            let b = 0;
-            for (let ii = 0; ii < results.length; ii++) {
-                let doc = results[ii];
-                b += doc.content.length;
-                if (b > query.limitBytes) {
-                    results = results.slice(ii);
-                    break;
-                }
-            }
-        }
-
-        return results;
-    }
-    upsertDocument(doc: Document): void {
-        Object.freeze(doc);
-        let slots: Record<string, Document> = this._docs[doc.path] || {};
-        slots[doc.author] = doc;
-        this._docs[doc.path] = slots;
-    }
-    close(): void {}
-}
-
-//================================================================================
-
-let storage = new MegaStorage(
-    new MemoryDriver(),
-    [ValidatorEs4],
-    '+gardening.xxxx'
-);
-
