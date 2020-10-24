@@ -25,7 +25,7 @@ export class DriverMemory implements IStorageDriver {
     begin(storage2: IStorage2, workspace: WorkspaceAddress): void {
         this._storage2 = storage2;
         this._workspace = workspace;
-        this.removeExpiredDocs(Date.now() * 1000);
+        this.removeExpiredDocuments(Date.now() * 1000);
     }
     authors(now: number): AuthorAddress[] {
         let authorMap: Record<string, boolean> = {};
@@ -138,7 +138,7 @@ export class DriverMemory implements IStorageDriver {
         slots[doc.author] = doc;
         this._docs[doc.path] = slots;
     }
-    removeExpiredDocs(now: number): void {
+    removeExpiredDocuments(now: number): void {
         // using "for... in" on purpose since we're deleting while iterating
         for (let path in this._docs) {
             let slots = this._docs[path];

@@ -347,11 +347,11 @@ for (let scenario of scenarios) {
         t.end();
     });
 
-    t.test('removeExpiredDocs', (t: any) => {
+    t.test('removeExpiredDocuments', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
 
         // this should not crash
-        driver.removeExpiredDocs(now);
+        driver.removeExpiredDocuments(now);
 
         // a good doc
         let doc1 = makeDoc({workspace: WORKSPACE, keypair: keypair1, path: '/a', content: 'hello', timestamp: now });
@@ -364,7 +364,7 @@ for (let scenario of scenarios) {
         t.same(driver.pathQuery({}, now).length, 2, 'starting off with 2 docs');
 
         // remove expired docs as if we were in the future
-        driver.removeExpiredDocs(now + 100);
+        driver.removeExpiredDocuments(now + 100);
 
         // back in the present, query and only find 1
         t.same(driver.pathQuery({}, now).length, 1, 'only 1 remains after expired doc was removed');

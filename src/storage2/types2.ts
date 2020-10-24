@@ -55,6 +55,6 @@ export interface IStorageDriver {
     pathQuery(query: QueryOpts2, now: number): string[];
     documentQuery(query: QueryOpts2, now: number): Document[];
     upsertDocument(doc: Document): void;  // overwrite existing doc no matter what
-    removeExpiredDocs(now: number): void;
+    removeExpiredDocuments(now: number): void;
     close(): void;
 }
