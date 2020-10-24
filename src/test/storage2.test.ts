@@ -849,4 +849,16 @@ for (let scenario of scenarios) {
         t.end();
     });
 
+    t.test(scenario.description + ': overwrite expired ephemeral doc with another one', (t: any) => {
+        let storage = scenario.makeStorage(WORKSPACE);
+
+        t.same(storage.set(keypair1, {format: FORMAT, path: '/path1!', content: 'hello', timestamp: now, deleteAfter: now+10}), WriteResult.Accepted, 'write ephemeral doc');
+        t.same(storage.authors(), [keypair1.address], "doc shows up in authors()");
+        storage._now = now + 100;
+        t.same(storage.authors(), [], "expired doc does not show up in authors()");
+        t.same(storage.getDocument('/path1!'), undefined, "now it's expired and is not returned");
+
+        t.end();
+    });
+
 }

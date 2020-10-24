@@ -113,9 +113,9 @@ for (let scenario of scenarios) {
 
     t.test('empty storage', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
-        t.same(driver.authors(), [], 'empty authors');
-        t.same(driver.pathQuery({}), [], 'empty path query');
-        t.same(driver.documentQuery({}), [], 'empty document query');
+        t.same(driver.authors(now), [], 'empty authors');
+        t.same(driver.pathQuery({}, now), [], 'empty path query');
+        t.same(driver.documentQuery({}, now), [], 'empty document query');
         driver.close();
         t.end();
     });
@@ -131,7 +131,7 @@ for (let scenario of scenarios) {
         ].map(opts => makeDoc(opts));
 
         inputDocs.forEach(d => driver.upsertDocument(d));
-        let outputDocs = driver.documentQuery({});
+        let outputDocs = driver.documentQuery({}, now);
 
         t.same(outputDocs.length, 1, 'upsert should overwrite same-path-same-author');
         t.same(outputDocs[0], inputDocs[inputDocs.length-1], 'upsert always overwrites no matter the timestamp');
@@ -151,7 +151,7 @@ for (let scenario of scenarios) {
         ].map(opts => makeDoc(opts));
 
         inputDocs.forEach(d => driver.upsertDocument(d));
-        let outputDocs = driver.documentQuery({});
+        let outputDocs = driver.documentQuery({}, now);
 
         t.same(outputDocs.length, inputDocs.length, 'upsert should not overwrite these test cases');
         let sortedInputs = [...inputDocs];
@@ -162,7 +162,7 @@ for (let scenario of scenarios) {
 
         let expectedAuthors = [author1, author2];
         expectedAuthors.sort();
-        t.same(driver.authors(), expectedAuthors, 'authors are deduped and sorted');
+        t.same(driver.authors(now), expectedAuthors, 'authors are deduped and sorted');
 
         t.end();
     });
@@ -327,7 +327,7 @@ for (let scenario of scenarios) {
         // test documentQuery
         for (let { query, matches, note } of testCases) {
             note = (note || '') + ' ' + JSON.stringify(query);
-            let actualMatches = driver.documentQuery(query);
+            let actualMatches = driver.documentQuery(query, now);
             if (matches.length !== actualMatches.length) {
                 t.same(actualMatches.length, matches.length, `documentQuery: correct number of results: ${note}`);
             } else {
@@ -340,11 +340,13 @@ for (let scenario of scenarios) {
             note = (note || '') + ' ' + JSON.stringify(query);
             let expectedPaths = uniq(matches.map(m => m.path));
             expectedPaths.sort();
-            let actualPaths = driver.pathQuery(query);
+            let actualPaths = driver.pathQuery(query, now);
             t.same(actualPaths, expectedPaths, `pathQuery: all match: ${note}`);
         }
 
         t.end();
     });
+
+    // TODO: test ephemeral documents
 
 }

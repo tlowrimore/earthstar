@@ -26,10 +26,12 @@ export class DriverMemory implements IStorageDriver {
         this._storage2 = storage2;
         this._workspace = workspace;
     }
-    authors(): AuthorAddress[] {
+    authors(now: number): AuthorAddress[] {
         let authorMap: Record<string, boolean> = {};
         for (let slots of Object.values(this._docs)) {
             for (let author of Object.keys(slots)) {
+                let doc = slots[author];
+                if (doc.deleteAfter !== null && doc.deleteAfter < now) { continue; }
                 authorMap[author] = true;
             }
         }
@@ -37,7 +39,7 @@ export class DriverMemory implements IStorageDriver {
         authors.sort();
         return authors;
     }
-    pathQuery(query: QueryOpts2): string[] {
+    pathQuery(query: QueryOpts2, now: number): string[] {
         query = cleanUpQuery(query);
 
         if (query.limit === 0 || query.limitBytes === 0) { return []; }
@@ -45,10 +47,12 @@ export class DriverMemory implements IStorageDriver {
         // TODO: optimization: if the query only cares about path and pathPrefix,
         // we can just filter through Object.keys(_docs)
         // instead of doing a full documentQuery
+        // ... but nope, we have to filter out expired docs
 
         // remove limits and do query
-        // note we let limitBytes go through to the document query
-        let docs = this.documentQuery({ ...query, limit: undefined });
+        // note we let limitBytes go through to the document query.
+        // the documentQuery also handles removing expired docs for us.
+        let docs = this.documentQuery({ ...query, limit: undefined }, now);
 
         // get unique paths
         let pathMap: Record<string, boolean> = {};
@@ -65,7 +69,7 @@ export class DriverMemory implements IStorageDriver {
 
         return paths;
     }
-    documentQuery(query: QueryOpts2): Document[] {
+    documentQuery(query: QueryOpts2, now: number): Document[] {
         query = cleanUpQuery(query);
 
         if (query.limit === 0 || query.limitBytes === 0) { return []; }
@@ -79,6 +83,7 @@ export class DriverMemory implements IStorageDriver {
             if (this._docs[query.path] === undefined) { return []; }
             pathsToConsider = [query.path];
         } else {
+            // TODO: consider optimizing this more by filtering by pathPrefix here.  benchmark it
             pathsToConsider = Object.keys(this._docs);
         }
 
@@ -92,12 +97,13 @@ export class DriverMemory implements IStorageDriver {
                 docsThisPath = [docsThisPath[0]];
             }
             // apply the rest of the individual query selectors: path, timestamp, author, contentSize
+            // and skip expired ephemeral docs
             docsThisPath
-                .filter(d => queryMatchesDoc(query, d))
+                .filter(d => queryMatchesDoc(query, d) && (d.deleteAfter === null || now <= d.deleteAfter))
                 .forEach(d => results.push(d));
 
             // TODO: optimize this:
-            // if sort == 'path' and there's a limit set,
+            // if sort == 'path' and there's a limit,
             // we could sort pathsToConsider, then if
             // if we finish one path's documents and either of the
             // limits are exceeded, we can bail out of this loop
@@ -130,6 +136,9 @@ export class DriverMemory implements IStorageDriver {
         let slots: Record<string, Document> = this._docs[doc.path] || {};
         slots[doc.author] = doc;
         this._docs[doc.path] = slots;
+    }
+    removeExpiredDocs(now: number): void {
+        // TODO
     }
     close(): void {}
 }

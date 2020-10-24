@@ -85,24 +85,29 @@ export class Storage2 implements IStorage2 {
     // GET DATA OUT
     authors(): AuthorAddress[] {
         this._assertNotClosed();
-        return this._driver.authors();
+        let now = this._now || (Date.now() * 1000);
+        return this._driver.authors(now);
     }
     paths(query: QueryOpts2 = {}): string[] {
         this._assertNotClosed();
-        return this._driver.pathQuery(query);
+        let now = this._now || (Date.now() * 1000);
+        return this._driver.pathQuery(query, now);
     }
     documents(query: QueryOpts2 = {}): Document[] {
         this._assertNotClosed();
-        return this._driver.documentQuery(query);
+        let now = this._now || (Date.now() * 1000);
+        return this._driver.documentQuery(query, now);
     }
     contents(query: QueryOpts2 = {}): string[] {
         this._assertNotClosed();
-        return this._driver.documentQuery(query)
+        let now = this._now || (Date.now() * 1000);
+        return this._driver.documentQuery(query, now)
             .map(doc => doc.content);
     }
     getDocument(path: string): Document | undefined {
         this._assertNotClosed();
-        let doc = this._driver.documentQuery({ path: path, isHead: true });
+        let now = this._now || (Date.now() * 1000);
+        let doc = this._driver.documentQuery({ path: path, isHead: true }, now);
         return doc.length === 0 ? undefined : doc[0];
     }
     getContent(path: string): string | undefined {
@@ -114,7 +119,7 @@ export class Storage2 implements IStorage2 {
     ingestDocument(doc: Document, isLocal: boolean): WriteResult | ValidationError {
         this._assertNotClosed();
 
-        let now = this._now || Date.now() * 1000;
+        let now = this._now || (Date.now() * 1000);
 
         // validate doc
         let validator = this._validatorMap[doc.format];
@@ -136,7 +141,7 @@ export class Storage2 implements IStorage2 {
         let existingSameAuthor : Document | undefined = this._driver.documentQuery({
             path: doc.path,
             author: doc.author,
-        })[0];
+        }, now)[0];
 
         // if the existing doc from same author is expired, it should be deleted.
         // but we can just pretend we didn't see it and let it get overwritten by the incoming doc.
@@ -181,7 +186,7 @@ export class Storage2 implements IStorage2 {
     set(keypair: AuthorKeypair, docToSet: DocToSet): WriteResult | ValidationError {
         this._assertNotClosed();
 
-        let now = this._now || Date.now() * 1000;
+        let now = this._now || (Date.now() * 1000);
 
         let validator = this._validatorMap[docToSet.format];
         if (validator === undefined) {

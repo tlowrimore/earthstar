@@ -40,13 +40,17 @@ export interface IStorage2 {
 export interface IStorageDriver {
     // driver is responsible for actually saving, loading, querying documents
     // driver is responsible for freezing documents
+    // driver is responsible for not returning expired documents,
+    //   deleting them occasionally with a setInterval that it manages and/or on load,
+    //   and maybe deleting them when encountered in a query.
     // driver does no validation
     // driver does not check if what's being stored is reasonable
     // driver doesn't make any decisions, that's MegaStorage's job
     begin(megaStorage: IStorage2, workspace: WorkspaceAddress): void;
-    authors(): AuthorAddress[];
-    pathQuery(query: QueryOpts2): string[];
-    documentQuery(query: QueryOpts2): Document[];
+    authors(now: number): AuthorAddress[];  // this includes "deleted" docs with content: '', but ignores expired docs
+    pathQuery(query: QueryOpts2, now: number): string[];
+    documentQuery(query: QueryOpts2, now: number): Document[];
     upsertDocument(doc: Document): void;  // overwrite existing doc no matter what
+    removeExpiredDocs(now: number): void;
     close(): void;
 }
