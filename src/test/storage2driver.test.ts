@@ -347,6 +347,29 @@ for (let scenario of scenarios) {
         t.end();
     });
 
-    // TODO: test ephemeral documents
+    t.test('removeExpiredDocs', (t: any) => {
+        let driver = scenario.makeDriver(WORKSPACE);
+
+        // this should not crash
+        driver.removeExpiredDocs(now);
+
+        // a good doc
+        let doc1 = makeDoc({workspace: WORKSPACE, keypair: keypair1, path: '/a', content: 'hello', timestamp: now });
+        // a doc that will expire
+        let doc2 = makeDoc({workspace: WORKSPACE, keypair: keypair1, path: '/a!', content: 'hello', timestamp: now, deleteAfter: now + 5 });
+
+        driver.upsertDocument(doc1);
+        driver.upsertDocument(doc2);
+
+        t.same(driver.pathQuery({}, now).length, 2, 'starting off with 2 docs');
+
+        // remove expired docs as if we were in the future
+        driver.removeExpiredDocs(now + 100);
+
+        // back in the present, query and only find 1
+        t.same(driver.pathQuery({}, now).length, 1, 'only 1 remains after expired doc was removed');
+
+        t.end();
+    });
 
 }

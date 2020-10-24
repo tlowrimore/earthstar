@@ -33,6 +33,7 @@ export interface IStorage2 {
     ingestDocument(doc: Document, isLocal: boolean): WriteResult | ValidationError;
     set(keypair: AuthorKeypair, docToSet: DocToSet): WriteResult | ValidationError;
     // CLOSE
+    // removeExpiredDocs()?
     close(): void;
     isClosed(): boolean;
 }
@@ -40,9 +41,12 @@ export interface IStorage2 {
 export interface IStorageDriver {
     // driver is responsible for actually saving, loading, querying documents
     // driver is responsible for freezing documents
-    // driver is responsible for not returning expired documents,
-    //   deleting them occasionally with a setInterval that it manages and/or on load,
-    //   and maybe deleting them when encountered in a query.
+    // driver is responsible for not returning expired documents.
+    //   must delete all expired docs in at least 1 of these 3 circumstances:
+    //      with a setInterval that it manages, running at least every 60 minutes
+    //      on begin()
+    //      on close()
+    //   optionally, can also delete them when encountering them in a query.
     // driver does no validation
     // driver does not check if what's being stored is reasonable
     // driver doesn't make any decisions, that's MegaStorage's job
