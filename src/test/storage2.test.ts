@@ -846,6 +846,14 @@ for (let scenario of scenarios) {
         let offset = Math.abs((Date.now() * 1000) - doc.timestamp);
         t.ok(offset < 200 * 1000, 'doc timestamp is within 200ms of actual time');
 
+        // these are obvious but they help us get 100% code coverage
+        // since we're letting the storage get the actual current time
+        // instead of relying on _now
+        t.same(storage.authors(), [keypair1.address], 'authors match');
+        t.same(storage.paths(), ['/path1'], 'paths match');
+        t.same(storage.documents(), [doc], 'documents match');
+        t.same(storage.contents(), ['hello'], 'contents match');
+
         t.end();
     });
 

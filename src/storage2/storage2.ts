@@ -143,18 +143,14 @@ export class Storage2 implements IStorage2 {
             author: doc.author,
         }, now)[0];
 
-        // if the existing doc from same author is expired, it should be deleted.
-        // but we can just pretend we didn't see it and let it get overwritten by the incoming doc.
-        if (existingSameAuthor !== undefined) {
-            if (existingSameAuthor.deleteAfter !== null) {
-                if (now > existingSameAuthor.deleteAfter) {
-                    existingSameAuthor = undefined;
-                }
-            }
-        }
+        // there might be an existingSameAuthor that's ephemeral and has expired.
+        // if so, it will not have been returned from driver.documentQuery.
+        // we'll just overwrite it with upsertDocument() as if it wasn't there.
 
         // Compare timestamps.
         // Compare signature to break timestamp ties.
+        // Note this is based only on timestamp and does not care about deleteAfter
+        // (e.g. the lifespan of ephemeral documents doesn't matter when comparing them)
         if (existingSameAuthor !== undefined
             && [doc.timestamp, doc.signature]
             <= [existingSameAuthor.timestamp, existingSameAuthor.signature]
