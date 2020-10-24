@@ -73,7 +73,9 @@ interface Scenario {
 let scenarios : Scenario[] = [
     {
         makeStorage: (workspace : string) : IStorage2 => {
-            return new Storage2(new DriverMemory(), VALIDATORS, workspace);
+            let storage = new Storage2(new DriverMemory(), VALIDATORS, workspace);
+            storage._now = now;
+            return storage;
         },
         description: 'Storage2 DriverMemory',
     },
@@ -130,7 +132,6 @@ for (let scenario of scenarios) {
 
     t.test(scenario.description + ': store ingestDocument rejects invalid docs', (t: any) => {
         let storage = scenario.makeStorage(WORKSPACE);
-        storage._now = now;
 
         let doc1: Document = {
             format: FORMAT,
@@ -204,7 +205,6 @@ for (let scenario of scenarios) {
 
     t.test(scenario.description + ': deleteAfter', (t: any) => {
         let storage = scenario.makeStorage(WORKSPACE);
-        storage._now = now;
 
         // an expired ephemeral doc can't be set because it's invalid
         t.ok(isErr(storage.set(keypair1, {
@@ -310,7 +310,6 @@ for (let scenario of scenarios) {
 
     t.test(scenario.description + ': basic one-author store', (t: any) => {
         let storage = scenario.makeStorage(WORKSPACE);
-        storage._now = now;
 
         t.equal(storage.getContent('/path1'), undefined, 'nonexistant paths are undefined');
         t.equal(storage.getContent('/path2'), undefined, 'nonexistant paths are undefined');
@@ -379,7 +378,6 @@ for (let scenario of scenarios) {
 
     t.test(scenario.description + ': contentIsEmpty queries', (t: any) => {
         let storage = scenario.makeStorage(WORKSPACE);
-        storage._now = now;
 
         t.same(storage.set(keypair1, {format: FORMAT, path: '/full', content: 'full', timestamp: now}), WriteResult.Accepted, 'set /full to "full"');
         t.same(storage.set(keypair1, {format: FORMAT, path: '/empty', content: '', timestamp: now}), WriteResult.Accepted, 'set /empty to ""');
@@ -437,9 +435,6 @@ for (let scenario of scenarios) {
         t.end();
     });
 
-}
-/*
-
     t.test(scenario.description + ': limits on queries', (t: any) => {
         let storage = scenario.makeStorage(WORKSPACE);
 
@@ -452,24 +447,25 @@ for (let scenario of scenarios) {
         t.same(storage.authors(), [author1, author3, author2], 'authors');
 
         // queries with limits
-        t.same(storage.paths( { includeHistory: true }), ['/foo', '/pathA'], 'paths with history, no limit');
-        t.same(storage.contents({ includeHistory: true }), ['foo', 'content3', 'content2', 'content1'], 'contents with history, no limit');
+        // including all history
+        t.same(storage.paths(   {}), ['/foo', '/pathA'], 'paths with history, no limit');
+        t.same(storage.contents({}), ['foo', 'content3', 'content2', 'content1'], 'contents with history, no limit');
 
-        t.same(storage.paths( { includeHistory: true, limit: 1 }), ['/foo'], 'paths with history, limit 1');
-        t.same(storage.contents({ includeHistory: true, limit: 1 }), ['foo'], 'contents with history, limit 1');
+        t.same(storage.paths(   { limit: 1 }), ['/foo'], 'paths with history, limit 1');
+        t.same(storage.contents({ limit: 1 }), ['foo'], 'contents with history, limit 1');
 
-        t.same(storage.paths( { includeHistory: true, limit: 2 }), ['/foo', '/pathA'], 'paths with history, limit 2');
-        t.same(storage.contents({ includeHistory: true, limit: 2 }), ['foo', 'content3'], 'contents with history, limit 2');
+        t.same(storage.paths(   { limit: 2 }), ['/foo', '/pathA'], 'paths with history, limit 2');
+        t.same(storage.contents({ limit: 2 }), ['foo', 'content3'], 'contents with history, limit 2');
 
-        t.same(storage.paths( { includeHistory: true, limit: 3 }), ['/foo', '/pathA'], 'paths with history, limit 3');
-        t.same(storage.contents({ includeHistory: true, limit: 3 }), ['foo', 'content3', 'content2'], 'contents with history, limit 3');
+        t.same(storage.paths(   { limit: 3 }), ['/foo', '/pathA'], 'paths with history, limit 3');
+        t.same(storage.contents({ limit: 3 }), ['foo', 'content3', 'content2'], 'contents with history, limit 3');
         
-        // no history
-        t.same(storage.paths( { includeHistory: false }), ['/foo', '/pathA'], 'paths no history, no limit');
-        t.same(storage.contents({ includeHistory: false }), ['foo', 'content3'], 'contents no history, no limit');
+        // no history, just heads
+        t.same(storage.paths(   { isHead: true }), ['/foo', '/pathA'], 'paths no history, no limit');
+        t.same(storage.contents({ isHead: true }), ['foo', 'content3'], 'contents no history, no limit');
 
-        t.same(storage.paths( { includeHistory: false, limit: 1 }), ['/foo'], 'paths no history, limit 1');
-        t.same(storage.contents({ includeHistory: false, limit: 1 }), ['foo'], 'contents no history, limit 1');
+        t.same(storage.paths(   { isHead: true, limit: 1 }), ['/foo'], 'paths no history, limit 1');
+        t.same(storage.contents({ isHead: true, limit: 1 }), ['foo'], 'contents no history, limit 1');
 
         t.end();
     });
@@ -485,30 +481,30 @@ for (let scenario of scenarios) {
         t.same(storage.authors(), [author1, author2], 'authors');
 
         // path queries
-        t.same(storage.paths(    { path: '/pathA', includeHistory: false }), ['/pathA'], 'paths with path query');
-        t.same(storage.contents(   { path: '/pathA', includeHistory: false }), ['content1.Z'], 'contents with path query');
-        t.same(storage.documents({ path: '/pathA', includeHistory: false }).map(d => d.content), ['content1.Z'], 'documents with path query');
+        t.same(storage.paths(    { path: '/pathA', isHead: true }), ['/pathA'], 'paths with path query');
+        t.same(storage.contents( { path: '/pathA', isHead: true }), ['content1.Z'], 'contents with path query');
+        t.same(storage.documents({ path: '/pathA', isHead: true }).map(d => d.content), ['content1.Z'], 'documents with path query');
 
-        t.same(storage.paths(    { path: '/pathA', includeHistory: true }), ['/pathA'], 'paths with path query, history');
-        t.same(storage.contents(   { path: '/pathA', includeHistory: true }), ['content1.Z', 'content2.Y'], 'contents with path query, history');
-        t.same(storage.documents({ path: '/pathA', includeHistory: true }).map(d => d.content), ['content1.Z', 'content2.Y'], 'documents with path query, history');
+        t.same(storage.paths(    { path: '/pathA',  }), ['/pathA'], 'paths with path query, history');
+        t.same(storage.contents( { path: '/pathA',  }), ['content1.Z', 'content2.Y'], 'contents with path query, history');
+        t.same(storage.documents({ path: '/pathA',  }).map(d => d.content), ['content1.Z', 'content2.Y'], 'documents with path query, history');
 
-        // versionsByAuthor
-        t.same(storage.paths({ versionsByAuthor: author1, includeHistory: true }), ['/pathA'], 'paths versionsByAuthor 1, history');
-        t.same(storage.paths({ versionsByAuthor: author1, includeHistory: false }), ['/pathA'], 'paths versionsByAuthor 1, no history');
-        t.same(storage.paths({ versionsByAuthor: author2, includeHistory: true }), ['/pathA'], 'paths versionsByAuthor 2, history');
-        t.same(storage.paths({ versionsByAuthor: author2, includeHistory: false }), [], 'paths versionsByAuthor 2, no history');
-        t.same(storage.contents({ versionsByAuthor: author1, includeHistory: true }), ['content1.Z'], 'contents versionsByAuthor 1, history');
-        t.same(storage.contents({ versionsByAuthor: author1, includeHistory: false }), ['content1.Z'], 'contents versionsByAuthor 1, no history');
-        t.same(storage.contents({ versionsByAuthor: author2, includeHistory: true }), ['content2.Y'], 'contents versionsByAuthor 2, history');
-        t.same(storage.contents({ versionsByAuthor: author2, includeHistory: false }), [], 'contents versionsByAuthor 2, no history');
-        t.same(storage.documents({ versionsByAuthor: author1, includeHistory: true }).length, 1, 'documents versionsByAuthor 1, history');
-        t.same(storage.documents({ versionsByAuthor: author1, includeHistory: false }).length, 1, 'documents versionsByAuthor 1, no history');
-        t.same(storage.documents({ versionsByAuthor: author2, includeHistory: true }).length, 1, 'documents versionsByAuthor 2, history');
-        t.same(storage.documents({ versionsByAuthor: author2, includeHistory: false }).length, 0, 'documents versionsByAuthor 2, no history');
+        // author
+        t.same(storage.paths({ author: author1               }), ['/pathA'], 'paths author 1, history');
+        t.same(storage.paths({ author: author1, isHead: true }), ['/pathA'], 'paths author 1, no history');
+        t.same(storage.paths({ author: author2               }), ['/pathA'], 'paths author 2, history');
+        t.same(storage.paths({ author: author2, isHead: true }), [], 'paths author 2, no history');
+        t.same(storage.contents({ author: author1               }), ['content1.Z'], 'contents author 1, history');
+        t.same(storage.contents({ author: author1, isHead: true }), ['content1.Z'], 'contents author 1, no history');
+        t.same(storage.contents({ author: author2               }), ['content2.Y'], 'contents author 2, history');
+        t.same(storage.contents({ author: author2, isHead: true }), [], 'contents author 2, no history');
+        t.same(storage.documents({ author: author1               }).length, 1, 'documents author 1, history');
+        t.same(storage.documents({ author: author1, isHead: true }).length, 1, 'documents author 1, no history');
+        t.same(storage.documents({ author: author2               }).length, 1, 'documents author 2, history');
+        t.same(storage.documents({ author: author2, isHead: true }).length, 0, 'documents author 2, no history');
 
         //// participatingAuthor
-        //// TODO: this is not implemented in sqlite yet
+        //// TODO: this has been removed from the latest query options
         //t.same(storage.contents({ participatingAuthor: author1, includeHistory: true }), ['content1.Z', 'content2.Y'], 'participatingAuthor 1, with history');
         //t.same(storage.contents({ participatingAuthor: author1, includeHistory: false }), ['content1.Z'], 'participatingAuthor 1, no history');
         //t.same(storage.contents({ participatingAuthor: author2, includeHistory: true }), ['content1.Z', 'content2.Y'], 'participatingAuthor 2, with history');
@@ -538,15 +534,15 @@ for (let scenario of scenarios) {
         t.equal(storage.getContent('/path1'), 'three');
 
         t.equal(storage.paths().length, 3, '3 paths');
-        t.equal(storage.contents().length, 3, '3 contents');
-        t.equal(storage.contents({ includeHistory: true }).length, 4, '4 contents with history');
+        t.equal(storage.contents({ isHead: true }).length, 3, '3 contents with just heads');
+        t.equal(storage.contents().length, 4, '4 contents with history');
 
         t.same(storage.paths(), ['/decoy1', '/decoy2', '/path1'], 'paths()');
-        t.same(storage.contents(), ['aaa', 'zzz', 'three'], 'contents()');
-        t.same(storage.contents({ includeHistory: true }), ['aaa', 'zzz', 'three', 'two'], 'contents with history, newest first');
+        t.same(storage.contents({ isHead: true }), ['aaa', 'zzz', 'three'], 'contents() with just heads');
+        t.same(storage.contents(), ['aaa', 'zzz', 'three', 'two'], 'contents with history, newest first');
 
         t.same(
-            storage.documents({ includeHistory: true }).map((doc : Document) => doc.author),
+            storage.documents().map((doc : Document) => doc.author),
             [author1, author1, author1, author2],
             'docs with history, newest first, docs should have correct authors'
         );
@@ -555,10 +551,13 @@ for (let scenario of scenarios) {
         sortedAuthors.sort();
         t.same(storage.authors(), sortedAuthors, 'authors');
 
-        // TODO: test 2 authors, same timestamps, different signatures
+        // TODO: test sorting of docs with 2 authors, same timestamps, different signatures
 
         t.end();
     });
+
+}
+/*
 
     t.test(scenario.description + ': sync: push to empty store', (t: any) => {
         let storage1 = scenario.makeStorage(WORKSPACE);
