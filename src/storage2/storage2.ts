@@ -77,14 +77,14 @@ export class Storage2 implements IStorage2 {
         return this._driver.documentQuery(query)
             .map(doc => doc.content);
     }
-    latestDocument(path: string): Document | undefined {
+    getDocument(path: string): Document | undefined {
         this._assertNotClosed();
         let doc = this._driver.documentQuery({ path: path, isHead: true });
         return doc.length === 0 ? undefined : doc[0];
     }
-    latestContent(path: string): string | undefined {
+    getContent(path: string): string | undefined {
         this._assertNotClosed();
-        let doc = this.latestDocument(path);
+        let doc = this.getDocument(path);
         return doc === undefined ? undefined : doc.content;
     }
     // PUT DATA IN
@@ -139,7 +139,7 @@ export class Storage2 implements IStorage2 {
         this._driver.upsertDocument(doc);
 
         // read it again to see if it's the new latest doc
-        let latestDoc = this.latestDocument(doc.path);
+        let latestDoc = this.getDocument(doc.path);
         let isLatest = deepEqual(doc, latestDoc);
 
         // END LOCK
@@ -203,7 +203,7 @@ export class Storage2 implements IStorage2 {
             // so we can adjust the expiration timestamp too
             let lifespan: number | null = doc.deleteAfter === null ? null : (doc.deleteAfter - doc.timestamp);
 
-            let existingDocTimestamp = this.latestDocument(doc.path)?.timestamp || 0;
+            let existingDocTimestamp = this.getDocument(doc.path)?.timestamp || 0;
             doc.timestamp = Math.max(doc.timestamp, existingDocTimestamp+1);
 
             if (lifespan !== null) {

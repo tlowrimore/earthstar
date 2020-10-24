@@ -4,36 +4,24 @@ import t = require('tap');
 
 import {
     AuthorKeypair,
+    DocToSet,
     Document,
     FormatName,
-    IStorage,
     IValidator,
-    SyncOpts,
-    WriteResult,
-    isErr,
-    notErr,
-    WriteEvent,
-    ValidationError,
-    WorkspaceAddress,
     Path,
-    DocToSet,
+    WorkspaceAddress,
+    isErr,
 } from '../util/types';
 import {
     generateAuthorKeypair,
     sha256base32,
 } from '../crypto/crypto';
 import { ValidatorEs4 } from '../validator/es4';
-import { StorageMemory } from '../storage/memory';
-import { StorageSqlite } from '../storage/sqlite';
 import { logTest } from '../util/log';
 
 import {
-    IStorage2,
     IStorageDriver,
 } from '../storage2/types2';
-import {
-    Storage2,
-} from '../storage2/storage2';
 import {
     DriverMemory,
 } from '../storage2/driverMemory';

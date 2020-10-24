@@ -17,6 +17,7 @@ export interface IStorage2 {
     workspace : WorkspaceAddress;
     onWrite : Emitter<WriteEvent>;
     onChange : Emitter<undefined>;  // deprecated
+    _now: number | null;  // used for testing time behavior.  is used instead of Date.now().  normally null.
 
     // constructor takes: a driver, a list of validators, and a workspace
 
@@ -25,8 +26,9 @@ export interface IStorage2 {
     paths(query?: QueryOpts2): string[];
     documents(query?: QueryOpts2): Document[];
     contents(query?: QueryOpts2): string[];
-    latestDocument(path: string): Document | undefined;
-    latestContent(path: string): string | undefined;
+    // TODO: rename from "get" to "latest"
+    getDocument(path: string): Document | undefined;
+    getContent(path: string): string | undefined;
     // PUT DATA IN
     ingestDocument(doc: Document, isLocal: boolean): WriteResult | ValidationError;
     set(keypair: AuthorKeypair, docToSet: DocToSet): WriteResult | ValidationError;

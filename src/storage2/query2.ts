@@ -14,6 +14,9 @@ open questions
 
 */
 export interface QueryOpts2 {
+
+    // TODO: workspace?
+
     path?: string,
     pathPrefix?: string,
 
