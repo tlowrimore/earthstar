@@ -29,6 +29,7 @@
     "test-emitter": "tap -Rspecy --jobs=1 build/test/emitter.test.js",
     "test-layer-about": "tap -Rspecy --jobs=1 build/test/layers.about.test.js",
     "test-layer-wiki": "tap -Rspecy --jobs=1 build/test/layers.wiki.test.js",
+    "test-query2": "tap -Rspecy --jobs=1 build/test/query2.test.js",
     "test-storage": "tap -Rspecy --jobs=1 build/test/storage.test.js",
     "test-storage-async": "tap -Rspecy --jobs=1 build/test/storageAsync.test.js",
     "test-storage2-driver": "tap -Rspecy --jobs=1 build/test/storage2driver.test.js",
