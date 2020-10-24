@@ -20,7 +20,9 @@ import { ValidatorEs4 } from '../validator/es4';
 
 import {
     QueryOpts2,
-    cleanUpQuery
+    cleanUpQuery,
+    queryMatchesDoc,
+    historySortFn
 } from '../storage2/query2';
 
 //================================================================================
@@ -103,3 +105,131 @@ t.test('cleanUpQuery', (t: any) => {
 
     t.end();
 });
+
+t.test('queryMatchesDoc', (t: any) => {
+    let base = { workspace: WORKSPACE };
+    let inputDocs: Record<string, Document> = {
+        d0: makeDoc({...base, keypair: keypair1, timestamp: now    , path: '/a', content: ''}),
+        d1: makeDoc({...base, keypair: keypair1, timestamp: now    , path: '/aa', content: '1'}),
+        d2: makeDoc({...base, keypair: keypair1, timestamp: now    , path: '/aa/x', content: '22'}),
+        d3: makeDoc({...base, keypair: keypair2, timestamp: now + 1, path: '/b', content: '333'}),
+        d4: makeDoc({...base, keypair: keypair3, timestamp: now + 2, path: '/b', content: ''}),
+        d5: makeDoc({...base, keypair: keypair1, timestamp: now    , path: '/cc/x', content: '55555'}),
+    };
+
+    let i = inputDocs;
+    type TestCase = {
+        query: QueryOpts2,
+        matches: Document[],
+        note?: string,
+    }
+    let testCases: TestCase[] = [
+        // EVERYTHING
+        {
+            query: {},
+            matches: [i.d0, i.d1, i.d2, i.d3, i.d4, i.d5],
+        },
+        // PATH
+        {
+            query: { path: '/aa' },
+            matches: [i.d1],
+        },
+        {
+            query: { path: '/b' },
+            matches: [i.d3, i.d4],
+            note: 'two authors at one path',
+        },
+        {
+            query: { path: 'no such path' },
+            matches: [],
+        },
+        // PATH PREFIX
+        {
+            query: { pathPrefix: '/aa' },
+            matches: [i.d1, i.d2],
+        },
+        {
+            query: { pathPrefix: 'no such prefix' },
+            matches: [],
+        },
+        // TIMESTAMP
+        {
+            query: { timestamp: 0 },
+            matches: [],
+        },
+        {
+            query: { timestamp: 777 },
+            matches: [],
+        },
+        {
+            query: { timestamp: now + 1 },
+            matches: [i.d3],
+        },
+        {
+            query: { timestamp_gt: 777 },
+            matches: [i.d0, i.d1, i.d2, i.d3, i.d4, i.d5],
+        },
+        {
+            query: { timestamp_gt: 0 },
+            matches: [i.d0, i.d1, i.d2, i.d3, i.d4, i.d5],
+        },
+        {
+            query: { timestamp_gt: now },
+            matches: [i.d3, i.d4],
+        },
+        {
+            query: { timestamp_lt: 0 },
+            matches: [],
+        },
+        {
+            query: { timestamp_lt: 777 },
+            matches: [],
+        },
+        {
+            query: { timestamp_lt: now + 1 },
+            matches: [i.d0, i.d1, i.d2, i.d5],
+        },
+        // AUTHOR
+        {
+            query: { author: author1 },
+            matches: [i.d0, i.d1, i.d2, i.d5],
+        },
+        {
+            query: { author: author4 },
+            matches: [],
+        },
+        // CONTENT SIZE
+        {
+            query: { contentSize: 0 },
+            matches: [i.d0, i.d4],
+        },
+        {
+            query: { contentSize: 2 },
+            matches: [i.d2],
+        },
+        {
+            query: { contentSize_gt: 0 },
+            matches: [i.d1, i.d2, i.d3, i.d5],
+        },
+        {
+            query: { contentSize_lt: 2 },
+            matches: [i.d0, i.d1, i.d4],
+        },
+    ];
+
+    // test documentQuery
+    for (let { query, matches, note } of testCases) {
+        note = (note || '') + ' ' + JSON.stringify(query);
+        let actualMatches = Object.values(inputDocs).filter(doc => queryMatchesDoc(query, doc));
+        actualMatches.sort(historySortFn);
+        matches.sort(historySortFn);
+        if (matches.length !== actualMatches.length) {
+            t.same(actualMatches.length, matches.length, `correct number of results: ${note}`);
+        } else {
+            t.same(actualMatches, matches, `all match: ${note}`);
+        }
+    }
+
+    t.end();
+});
+

@@ -217,40 +217,6 @@ for (let scenario of scenarios) {
                 query: { pathPrefix: 'no such prefix' },
                 matches: [],
             },
-            // LIMIT
-            {
-                query: { limit: 0 },
-                matches: [],
-            },
-            {
-                query: { limit: 1 },
-                matches: [i.d0],
-            },
-            {
-                query: { limit: 3 },
-                matches: [i.d0, i.d1, i.d2],
-            },
-            {
-                query: { limit: 999 },
-                matches: [i.d0, i.d1, i.d2, i.d3, i.d4, i.d5],
-            },
-            // TODO: limitBytes
-            {
-                query: { limitBytes: 0 },
-                matches: [],
-            },
-            {
-                query: { limitBytes: 1 },
-                matches: [i.d0, i.d1],  // '' + '1' = 1 byte
-            },
-            {
-                query: { limitBytes: 2 },
-                matches: [i.d0, i.d1],  // '' + '1' = 1 byte
-            },
-            {
-                query: { limitBytes: 3 },
-                matches: [i.d0, i.d1, i.d2, i.d4],  // '' + '1' + '22' + '' = 3 bytes
-            },
             // TIMESTAMP
             {
                 query: { timestamp: 0 },
@@ -318,6 +284,40 @@ for (let scenario of scenarios) {
             {
                 query: { isHead: true },
                 matches: [i.d0, i.d1, i.d2, i.d4, i.d5],  // not d3
+            },
+            // LIMIT
+            {
+                query: { limit: 0 },
+                matches: [],
+            },
+            {
+                query: { limit: 1 },
+                matches: [i.d0],
+            },
+            {
+                query: { limit: 3 },
+                matches: [i.d0, i.d1, i.d2],
+            },
+            {
+                query: { limit: 999 },
+                matches: [i.d0, i.d1, i.d2, i.d3, i.d4, i.d5],
+            },
+            // LIMIT BYTES
+            {
+                query: { limitBytes: 0 },
+                matches: [],
+            },
+            {
+                query: { limitBytes: 1 },
+                matches: [i.d0, i.d1],  // '' + '1' = 1 byte
+            },
+            {
+                query: { limitBytes: 2 },
+                matches: [i.d0, i.d1],  // '' + '1' = 1 byte
+            },
+            {
+                query: { limitBytes: 3 },
+                matches: [i.d0, i.d1, i.d2, i.d4],  // '' + '1' + '22' + '' = 3 bytes
             },
         ];
         for (let testCase of testCases) {

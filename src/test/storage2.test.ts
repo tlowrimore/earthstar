@@ -808,4 +808,45 @@ for (let scenario of scenarios) {
 
         t.end();
     });
+
+    t.test(scenario.description + ': set(): invalid keypair causes error', (t: any) => {
+        let storage = scenario.makeStorage(WORKSPACE);
+
+        let keypairBad: AuthorKeypair = {
+            address: 'bad address',
+            secret: keypair1.secret,
+        }
+        let result = storage.set(keypairBad, {format: FORMAT, path: '/path1', content: 'hello'});
+        t.ok(result instanceof ValidationError, 'set with invalid keypair causes ValidationError');
+
+        let result2 = storage.set(keypair1, {format: FORMAT, path: 'invalid path', content: 'hello'});
+        t.ok(result2 instanceof ValidationError, 'set with invalid path causes ValidationError');
+
+        let result3 = storage.set(keypair1, {format: FORMAT, path: '/path1', content: 'hello', timestamp: 3});
+        t.ok(result3 instanceof ValidationError, 'set with invalid timestamp causes ValidationError');
+
+        t.same(storage.set(keypair1, {format: FORMAT, path: '/path1', content: 'hello'}), WriteResult.Accepted, 'write a valid document');
+        let result4 = storage.set(keypair1, {format: FORMAT, path: '/path1', content: 'hello', timestamp: 3});
+        t.ok(result4 instanceof ValidationError, 'set with invalid timestamp causes ValidationError even if a good document exists');
+
+        t.end();
+    });
+
+    t.test(scenario.description + ': set(): without now override', (t: any) => {
+        let storage = scenario.makeStorage(WORKSPACE);
+        storage._now = null;
+
+        t.same(storage.set(keypair1, {format: FORMAT, path: '/path1', content: 'hello'}), WriteResult.Accepted, 'write a valid document');
+        let doc = storage.getDocument('/path1');
+        if (doc === undefined) {
+            t.true(false, '???');
+            t.end();
+            return;
+        }
+        let offset = Math.abs((Date.now() * 1000) - doc.timestamp);
+        t.ok(offset < 200 * 1000, 'doc timestamp is within 200ms of actual time');
+
+        t.end();
+    });
+
 }
