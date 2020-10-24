@@ -12,6 +12,7 @@ import {
     WriteEvent,
     WriteResult,
     isErr,
+    SyncResults,
 } from '../util/types';
 import {
     IStorage2,
@@ -22,6 +23,28 @@ import { Emitter } from '../util/emitter';
 import { QueryOpts2 } from './query2';
 
 //================================================================================
+
+export let storage2Push = (storageA: IStorage2, storageB: IStorage2): number => {
+    // return number successfully pushed
+
+    // don't sync with yourself
+    if (storageA === storageB) { return 0; }
+    // don't sync across workspaces
+    if (storageA.workspace !== storageB.workspace) { return 0; }
+
+    let numSuccess = 0;
+    for (let doc of storageA.documents()) {
+        let result = storageB.ingestDocument(doc, false);
+        if (result === WriteResult.Accepted) { numSuccess += 1; }
+    }
+    return numSuccess;
+}
+export let storage2Sync = (storageA: IStorage2, storageB: IStorage2): SyncResults => {
+    return {
+        numPushed: storage2Push(storageA, storageB),
+        numPulled: storage2Push(storageB, storageA),
+    }
+}
 
 export class Storage2 implements IStorage2 {
     workspace : WorkspaceAddress;

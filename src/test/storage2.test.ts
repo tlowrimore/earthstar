@@ -28,7 +28,7 @@ import {
     IStorageDriver,
 } from '../storage2/types2';
 import {
-    Storage2,
+    Storage2, storage2Sync, storage2Push,
 } from '../storage2/storage2';
 import {
     DriverMemory,
@@ -556,9 +556,6 @@ for (let scenario of scenarios) {
         t.end();
     });
 
-}
-/*
-
     t.test(scenario.description + ': sync: push to empty store', (t: any) => {
         let storage1 = scenario.makeStorage(WORKSPACE);
         let storage2 = scenario.makeStorage(WORKSPACE);
@@ -570,82 +567,71 @@ for (let scenario of scenarios) {
         t.same(storage1.set(keypair2, {format: FORMAT, path: '/path1', content: 'two', timestamp: now + 1}), WriteResult.Accepted, 'author2 set path1');
 
         // sync
-        let syncResults = storage1.sync(storage2, { direction: 'push', existing: true, live: false });
-        //log('sync results', syncResults);
+        let syncResults = storage2Sync(storage1, storage2);
         t.same(syncResults, { numPushed: 4, numPulled: 0 }, 'pushed 4 docs (includes history docs).  pulled 0.');
 
         // check results
         t.same(storage1.paths(), storage2.paths(), 'storage1.paths() == storage2.paths()');
-        t.same(storage1.contents(), storage2.contents(), 'storage1 contents == storage2');
-        t.same(storage1.contents({ includeHistory: true }), storage2.contents({ includeHistory: true }), 'storage1 contents with history == storage2');
+        t.same(storage1.contents({ isHead: true }), storage2.contents({ isHead: true }), 'storage1 contents == storage2 (heads only)');
+        t.same(storage1.contents(), storage2.contents(), 'storage1 contents with history == storage2');
 
         t.same(storage2.paths(), ['/decoy1', '/decoy2', '/path1'], 'paths are as expected');
         t.same(storage2.getContent('/path1'), 'two', 'latest doc for a path wins on storage2');
         t.same(storage2.getDocument('/path1')?.content, 'two', 'getDocument has correct content');
-        t.same(storage2.contents(), ['aaa', 'zzz', 'two'], 'storage2 contents are as expected');
-        t.same(storage2.contents({ includeHistory: true }), ['aaa', 'zzz', 'two', 'one'], 'contents with history are as expected');
+        t.same(storage2.contents({ isHead: true }), ['aaa', 'zzz', 'two'], 'storage2 contents are as expected (heads only)');
+        t.same(storage2.contents(), ['aaa', 'zzz', 'two', 'one'], 'contents with history are as expected');
 
         // sync again.  nothing should happen.
-        let syncResults2 = storage1.sync(storage2, { direction: 'push', existing: true, live: false });
-        //log('sync results 2', syncResults2);
-        t.same(syncResults2, { numPushed: 0, numPulled: 0 }, 'nothing should happen if syncing again');
+        let syncResults2 = storage2Sync(storage1, storage2);
+        t.same(syncResults2, { numPushed: 0, numPulled: 0 }, 'nothing happens if syncing again');
 
         t.end();
     });
 
     t.test(scenario.description + ': sync: two-way', (t: any) => {
-        let optsToTry : SyncOpts[] = [
-            {},  // use the defaults
-            { direction: 'both', existing: true, live: false },  // these are the defaults
-        ];
+        let storage1 = scenario.makeStorage(WORKSPACE);
+        let storage2 = scenario.makeStorage(WORKSPACE);
 
-        for (let opts of optsToTry) {
-            let storage1 = scenario.makeStorage(WORKSPACE);
-            let storage2 = scenario.makeStorage(WORKSPACE);
+        // set up some paths
+        t.same(storage1.set(keypair1, {format: FORMAT, path: '/decoy2', content: 'zzz', timestamp: now}), WriteResult.Accepted, 'author1 set decoy path');  // winner  (push #1)
+        t.same(storage1.set(keypair1, {format: FORMAT, path: '/decoy1', content: 'aaa', timestamp: now}), WriteResult.Accepted, 'author1 set decoy path');  // winner  (push 2)
 
-            // set up some paths
-            t.same(storage1.set(keypair1, {format: FORMAT, path: '/decoy2', content: 'zzz', timestamp: now}), WriteResult.Accepted, 'author1 set decoy path');  // winner  (push #1)
-            t.same(storage1.set(keypair1, {format: FORMAT, path: '/decoy1', content: 'aaa', timestamp: now}), WriteResult.Accepted, 'author1 set decoy path');  // winner  (push 2)
+        t.same(storage1.set(keypair1, {format: FORMAT, path: '/path1', content: 'one', timestamp: now}), WriteResult.Accepted, 'author1 set path1');      // becomes history  (push 3)
+        t.same(storage1.set(keypair2, {format: FORMAT, path: '/path1', content: 'two', timestamp: now + 1}), WriteResult.Accepted, 'author2 set path1');  // winner  (push 4)
 
-            t.same(storage1.set(keypair1, {format: FORMAT, path: '/path1', content: 'one', timestamp: now}), WriteResult.Accepted, 'author1 set path1');      // becomes history  (push 3)
-            t.same(storage1.set(keypair2, {format: FORMAT, path: '/path1', content: 'two', timestamp: now + 1}), WriteResult.Accepted, 'author2 set path1');  // winner  (push 4)
+        t.same(storage2.set(keypair1, {format: FORMAT, path: '/latestOnStorage1', content: '221', timestamp: now}), WriteResult.Accepted);       // dropped
+        t.same(storage1.set(keypair1, {format: FORMAT, path: '/latestOnStorage1', content: '111', timestamp: now + 10}), WriteResult.Accepted);  // winner  (push 5)
 
-            t.same(storage2.set(keypair1, {format: FORMAT, path: '/latestOnStorage1', content: '221', timestamp: now}), WriteResult.Accepted);       // dropped
-            t.same(storage1.set(keypair1, {format: FORMAT, path: '/latestOnStorage1', content: '111', timestamp: now + 10}), WriteResult.Accepted);  // winner  (push 5)
+        t.same(storage1.set(keypair1, {format: FORMAT, path: '/latestOnStorage2', content: '11', timestamp: now}), WriteResult.Accepted);       // dropped
+        t.same(storage2.set(keypair1, {format: FORMAT, path: '/latestOnStorage2', content: '22', timestamp: now + 10}), WriteResult.Accepted);  // winner  (pull 1)
 
-            t.same(storage1.set(keypair1, {format: FORMAT, path: '/latestOnStorage2', content: '11', timestamp: now}), WriteResult.Accepted);       // dropped
-            t.same(storage2.set(keypair1, {format: FORMAT, path: '/latestOnStorage2', content: '22', timestamp: now + 10}), WriteResult.Accepted);  // winner  (pull 1)
+        t.same(storage1.set(keypair1, {format: FORMAT, path: '/authorConflict', content: 'author1storage1', timestamp: now}), WriteResult.Accepted);      // becomes history  (push 6)
+        t.same(storage2.set(keypair2, {format: FORMAT, path: '/authorConflict', content: 'author2storage2', timestamp: now + 1}), WriteResult.Accepted);  // winner  (pull 2)
 
-            t.same(storage1.set(keypair1, {format: FORMAT, path: '/authorConflict', content: 'author1storage1', timestamp: now}), WriteResult.Accepted);      // becomes history  (push 6)
-            t.same(storage2.set(keypair2, {format: FORMAT, path: '/authorConflict', content: 'author2storage2', timestamp: now + 1}), WriteResult.Accepted);  // winner  (pull 2)
+        // sync
+        let syncResults = storage2Sync(storage1, storage2);
+        t.same(syncResults, { numPushed: 6, numPulled: 2 }, 'pushed 6 docs, pulled 2 (including history)');
 
-            // sync
-            let syncResults = storage1.sync(storage2, opts);
-            //log('sync results', syncResults);
-            t.same(syncResults, { numPushed: 6, numPulled: 2 }, 'pushed 6 docs, pulled 2 (including history)');
+        t.equal(storage1.paths().length, 6, '6 paths');
+        t.equal(storage1.documents({ isHead: true }).length, 6, '6 docs, heads only');
+        t.equal(storage1.documents().length, 8, '8 docs with history');
+        t.equal(storage1.contents({ isHead: true }).length, 6, '6 contents, heads only');
+        t.equal(storage1.contents().length, 8, '8 contents with history');
 
-            logTest('=================================================');
-            logTest('=================================================');
-            logTest('=================================================');
+        t.same(storage1.paths(), '/authorConflict /decoy1 /decoy2 /latestOnStorage1 /latestOnStorage2 /path1'.split(' '), 'correct paths on storage1');
+        t.same(storage1.contents({ isHead: true }), 'author2storage2 aaa zzz 111 22 two'.split(' '), 'correct contents on storage1');
 
-            t.equal(storage1.paths().length, 6, '6 paths');
-            t.equal(storage1.documents().length, 6, '6 docs');
-            t.equal(storage1.documents({ includeHistory: true }).length, 8, '8 docs with history');
-            t.equal(storage1.contents().length, 6, '6 contents');
-            t.equal(storage1.contents({ includeHistory: true }).length, 8, '8 contents with history');
-
-            t.same(storage1.paths(), '/authorConflict /decoy1 /decoy2 /latestOnStorage1 /latestOnStorage2 /path1'.split(' '), 'correct paths on storage1');
-            t.same(storage1.contents(), 'author2storage2 aaa zzz 111 22 two'.split(' '), 'correct contents on storage1');
-
-            t.same(storage1.paths(), storage2.paths(), 'paths match');
-            t.same(storage1.documents(), storage2.documents(), 'docs match');
-            t.same(storage1.documents({ includeHistory: true }), storage2.documents({ includeHistory: true }), 'docs with history: match');
-            t.same(storage1.contents(), storage2.contents(), 'contents match');
-            t.same(storage1.contents({ includeHistory: true }), storage2.contents({ includeHistory: true }), 'contents with history: match');
-        }
+        t.same(storage1.paths(), storage2.paths(), 'paths match');
+        t.same(storage1.documents({ isHead: true }), storage2.documents({ isHead: true }), 'docs match, heads only');
+        t.same(storage1.documents(), storage2.documents(), 'docs with history: match');
+        t.same(storage1.contents({ isHead: true }), storage2.contents({ isHead: true }), 'contents match, heads only');
+        t.same(storage1.contents(), storage2.contents(), 'contents with history: match');
 
         t.end();
     });
+
+}
+/*
 
     t.test(scenario.description + ': sync: mismatched workspaces', (t: any) => {
         let storageA1 = scenario.makeStorage(WORKSPACE);
