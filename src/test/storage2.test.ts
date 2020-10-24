@@ -630,9 +630,6 @@ for (let scenario of scenarios) {
         t.end();
     });
 
-}
-/*
-
     t.test(scenario.description + ': sync: mismatched workspaces', (t: any) => {
         let storageA1 = scenario.makeStorage(WORKSPACE);
         let storageA2 = scenario.makeStorage(WORKSPACE);
@@ -641,8 +638,8 @@ for (let scenario of scenarios) {
         t.same(storageA2.set(keypair1, {format: FORMAT, path: '/a2', content: 'a2'}), WriteResult.Accepted);
         t.same(storageB.set(keypair1, {format: FORMAT, path: '/b', content: 'b'}), WriteResult.Accepted);
 
-        t.same(storageA1.sync(storageB), { numPulled: 0, numPushed: 0}, 'sync across different workspaces should do nothing');
-        t.same(storageA1.sync(storageA2), { numPulled: 1, numPushed: 1}, 'sync across matching workspaces should do something');
+        t.same(storage2Sync(storageA1, storageB),  { numPulled: 0, numPushed: 0}, 'sync across different workspaces should do nothing');
+        t.same(storage2Sync(storageA1, storageA2), { numPulled: 1, numPushed: 1}, 'sync across matching workspaces should do something');
 
         t.end();
     });
@@ -650,38 +647,30 @@ for (let scenario of scenarios) {
     t.test(scenario.description + ': sync: misc other options', (t: any) => {
         let storageEmpty1 = scenario.makeStorage(WORKSPACE);
         let storageEmpty2 = scenario.makeStorage(WORKSPACE);
+        let storageEmpty3 = scenario.makeStorage(WORKSPACE);
         let storage = scenario.makeStorage(WORKSPACE);
 
-        // this time let's omit schema and timestamp
         t.same(storage.set(keypair1, {format: FORMAT, path: '/foo', content: 'bar'}), WriteResult.Accepted);
 
-        // live mode (not implemented yet)
-        t.throws(() => storageEmpty1.sync(storageEmpty2, {live: true}), 'live is not implemented yet and should throw');
-
         // sync with empty stores
-        t.same(storageEmpty1.sync(storageEmpty2), { numPushed: 0, numPulled: 0 }, 'sync with empty stores');
-        t.same(storageEmpty1.sync(storageEmpty2, {direction: 'push'}), { numPushed: 0, numPulled: 0 }, 'sync with empty stores');
-        t.same(storageEmpty1.sync(storageEmpty2, {direction: 'pull'}), { numPushed: 0, numPulled: 0 }, 'sync with empty stores');
-        t.same(storageEmpty1.sync(storageEmpty2, {direction: 'both'}), { numPushed: 0, numPulled: 0 }, 'sync with empty stores');
-        t.same(storageEmpty1.sync(storageEmpty2, {existing: false}), { numPushed: 0, numPulled: 0 }, 'sync with empty stores');
-
-        // sync with empty stores
-        t.same(storage.sync(storageEmpty1, {direction: 'pull'}), { numPushed: 0, numPulled: 0 }, 'pull from empty store');
-        t.same(storageEmpty1.sync(storage, {direction: 'push'}), { numPushed: 0, numPulled: 0 }, 'push to empty store');
+        t.same(storage2Sync( storageEmpty1, storageEmpty2), { numPushed: 0, numPulled: 0 }, 'sync with empty stores');
+        t.same(storage2Push( storageEmpty1, storageEmpty2), 0, 'push with empty stores');
+        t.same(storage2Push( storageEmpty1, storage      ), 0, 'push from empty to full store');
 
         // sync with self
-        t.same(storage.sync(storage), { numPushed: 0, numPulled: 0 }, 'sync with self should do nothing');
-
-        // existing: false
-        t.same(storage.sync(storageEmpty1, {existing: false}), { numPushed: 0, numPulled: 0 }, 'sync with existing: false does nothing');
-        t.same(storageEmpty1.sync(storage, {existing: false}), { numPushed: 0, numPulled: 0 }, 'sync with existing: false does nothing');
+        t.same(storage2Sync(storage, storage), { numPushed: 0, numPulled: 0 }, 'sync with self should do nothing');
 
         // successful sync
-        t.same(storage.sync(storageEmpty1), { numPushed: 1, numPulled: 0 }, 'successful sync (push)');
-        t.same(storageEmpty2.sync(storage), { numPushed: 0, numPulled: 1 }, 'successful sync (pull)');
+        t.same(storage2Sync(storage, storageEmpty1), { numPushed: 1, numPulled: 0 }, 'successful sync (push)');
+        t.same(storage2Sync(storageEmpty2, storage), { numPushed: 0, numPulled: 1 }, 'successful sync (pull)');
+
+        t.same(storage2Push(storage, storageEmpty3), 1, 'successful push');
 
         t.end();
     });
+
+}
+/*
 
     t.test(scenario.description + ': onChange', (t: any) => {
         let storage = scenario.makeStorage(WORKSPACE);
