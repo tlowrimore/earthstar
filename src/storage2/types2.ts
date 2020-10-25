@@ -51,6 +51,12 @@ export interface IStorageDriver {
     // driver does not check if what's being stored is reasonable
     // driver doesn't make any decisions, that's MegaStorage's job
     begin(megaStorage: IStorage2, workspace: WorkspaceAddress): void;
+
+    setConfig(key: string, content: string): void;
+    getConfig(key: string): string | undefined;
+    deleteConfig(key: string): void;
+    clearConfig(): void;  // delete all
+
     authors(now: number): AuthorAddress[];  // this includes "deleted" docs with content: '', but ignores expired docs
     pathQuery(query: QueryOpts2, now: number): string[];
     documentQuery(query: QueryOpts2, now: number): Document[];

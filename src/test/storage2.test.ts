@@ -7,7 +7,6 @@ import {
     Document,
     FormatName,
     IValidator,
-    SyncOpts,
     WriteResult,
     isErr,
     notErr,
@@ -19,13 +18,9 @@ import {
     sha256base32,
 } from '../crypto/crypto';
 import { ValidatorEs4 } from '../validator/es4';
-import { StorageMemory } from '../storage/memory';
-import { StorageSqlite } from '../storage/sqlite';
-import { logTest } from '../util/log';
 
 import {
     IStorage2,
-    IStorageDriver,
 } from '../storage2/types2';
 import {
     Storage2, storage2Sync, storage2Push,
@@ -34,9 +29,8 @@ import {
     DriverMemory,
 } from '../storage2/driverMemory';
 import {
-    QueryOpts2,
-    historySortFn
-} from '../storage2/query2';
+    DriverSqlite,
+} from '../storage2/driverSqlite';
 
 //================================================================================
 // prepare for test scenarios
@@ -79,6 +73,14 @@ let scenarios : Scenario[] = [
         },
         description: 'Storage2 DriverMemory',
     },
+    //{
+    //    makeStorage: (workspace : string) : IStorage2 => {
+    //        let storage = new Storage2(new DriverSqlite(), VALIDATORS, workspace);
+    //        storage._now = now;
+    //        return storage;
+    //    },
+    //    description: 'Storage2 DriverSqlite',
+    //},
 ];
 
 //================================================================================

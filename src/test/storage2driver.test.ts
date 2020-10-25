@@ -17,7 +17,6 @@ import {
     sha256base32,
 } from '../crypto/crypto';
 import { ValidatorEs4 } from '../validator/es4';
-import { logTest } from '../util/log';
 
 import {
     IStorageDriver,
@@ -25,6 +24,9 @@ import {
 import {
     DriverMemory,
 } from '../storage2/driverMemory';
+import {
+    DriverSqlite,
+} from '../storage2/driverSqlite';
 import {
     QueryOpts2,
     historySortFn
@@ -72,6 +74,14 @@ let scenarios : Scenario[] = [
         },
         description: 'DriverMemory',
     },
+    //{
+    //    makeDriver: (workspace: WorkspaceAddress): IStorageDriver => {
+    //        let driver = new DriverSqlite(':memory:');
+    //        driver.begin(null as any, workspace);
+    //        return driver;
+    //    },
+    //    description: 'DriverSqlite',
+    //},
 ];
 
 type MakeDocOpts = {
@@ -120,6 +130,30 @@ for (let scenario of scenarios) {
         t.end();
     });
 
+    t.only('config', (t: any) => {
+        let driver = scenario.makeDriver(WORKSPACE);
+        t.same(driver.getConfig('foo'), undefined, 'get of unknown key is undefined');
+
+        driver.setConfig('foo', 'bar');
+        t.same(driver.getConfig('foo'), 'bar', 'set and get roundtrip');
+
+        driver.setConfig('foo', 'baz');
+        t.same(driver.getConfig('foo'), 'baz', 'overwrite and get roundtrip');
+
+        driver.setConfig('zzz', 'zzzzz');
+        driver.deleteConfig('foo');
+        t.same(driver.getConfig('foo'), undefined, 'delete, --> undefined');
+        t.same(driver.getConfig('zzz'), 'zzzzz', 'but other keys remain');
+
+        driver.clearConfig();
+        t.same(driver.getConfig('foo'), undefined, 'all are gone after clear');
+        t.same(driver.getConfig('zzz'), undefined, 'all are gone after clear');
+
+        driver.close();
+        t.end();
+    });
+
+
     t.test('upsert: always overwrite same-path-same-author', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
 
@@ -136,6 +170,7 @@ for (let scenario of scenarios) {
         t.same(outputDocs.length, 1, 'upsert should overwrite same-path-same-author');
         t.same(outputDocs[0], inputDocs[inputDocs.length-1], 'upsert always overwrites no matter the timestamp');
 
+        driver.close();
         t.end();
     });
 
@@ -164,6 +199,7 @@ for (let scenario of scenarios) {
         expectedAuthors.sort();
         t.same(driver.authors(now), expectedAuthors, 'authors are deduped and sorted');
 
+        driver.close();
         t.end();
     });
 
@@ -344,6 +380,7 @@ for (let scenario of scenarios) {
             t.same(actualPaths, expectedPaths, `pathQuery: all match: ${note}`);
         }
 
+        driver.close();
         t.end();
     });
 
@@ -369,6 +406,7 @@ for (let scenario of scenarios) {
         // back in the present, query and only find 1
         t.same(driver.pathQuery({}, now).length, 1, 'only 1 remains after expired doc was removed');
 
+        driver.close();
         t.end();
     });
 

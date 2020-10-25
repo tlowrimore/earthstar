@@ -20,12 +20,25 @@ export class DriverMemory implements IStorageDriver {
     _docs: Record<string, Record<string, Document>> = {};  // { path: { author: document }}
     _workspace: WorkspaceAddress = '';
     _storage2: IStorage2 = null as any as IStorage2;
+    _config: Record<string, string> = {};
     constructor() {
     }
     begin(storage2: IStorage2, workspace: WorkspaceAddress): void {
         this._storage2 = storage2;
         this._workspace = workspace;
         this.removeExpiredDocuments(Date.now() * 1000);
+    }
+    setConfig(key: string, content: string): void {
+        this._config[key] = content;
+    }
+    getConfig(key: string): string | undefined {
+        return this._config[key];
+    }
+    deleteConfig(key: string): void {
+        delete this._config[key];
+    }
+    clearConfig(): void {
+        this._config = {};
     }
     authors(now: number): AuthorAddress[] {
         let authorMap: Record<string, boolean> = {};
