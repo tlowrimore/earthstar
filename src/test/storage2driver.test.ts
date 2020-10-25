@@ -121,7 +121,7 @@ for (let scenario of scenarios) {
         t.end();
     });
 
-    t.test('empty storage', (t: any) => {
+    t.only('empty storage', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
         t.same(driver.authors(now), [], 'empty authors');
         t.same(driver.pathQuery({}, now), [], 'empty path query');
@@ -130,7 +130,7 @@ for (let scenario of scenarios) {
         t.end();
     });
 
-    t.only('config', (t: any) => {
+    t.test('config', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
         t.same(driver.getConfig('foo'), undefined, 'get of unknown key is undefined');
 
@@ -154,7 +154,7 @@ for (let scenario of scenarios) {
     });
 
 
-    t.test('upsert: always overwrite same-path-same-author', (t: any) => {
+    t.only('upsert: always overwrite same-path-same-author', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
 
         let base = { workspace: WORKSPACE };

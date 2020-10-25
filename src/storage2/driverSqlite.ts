@@ -20,6 +20,7 @@ import {
     historySortFn,
     queryMatchesDoc,
 } from './query2';
+import { logDebug } from '../util/log';
 
 //================================================================================
 
@@ -31,20 +32,23 @@ export class DriverSqlite implements IStorageDriver {
         this._fn = fn;
     }
     begin(storage2: IStorage2, workspace: WorkspaceAddress): void {
+        logDebug(`driverSqlite.begin(workspace: ${workspace})`);
         this._workspace = workspace;
-        this.removeExpiredDocuments(Date.now() * 1000);
 
         this.db = sqlite(this._fn);
 
         this._ensureTables();
 
         let schemaVersion = this.getConfig('schemaVersion');
+        logDebug(`driverSqlite.begin    schemaVersion: ${schemaVersion}`);
         if (schemaVersion === undefined) {
             schemaVersion = '1';
             this.setConfig('schemaVersion', schemaVersion);
         } else if (schemaVersion !== '1') {
             throw new Error(`sqlite file ${this._fn} has unknown schema version ${schemaVersion}`);
         }
+
+        this.removeExpiredDocuments(Date.now() * 1000);
     }
 
     _ensureTables() {
@@ -81,18 +85,18 @@ export class DriverSqlite implements IStorageDriver {
     }
     getConfig(key: string): string | undefined {
         let result = this.db.prepare(`
-            SELECT content FROM config WHERE key = :key
+            SELECT content FROM config WHERE key = :key;
         `).get({ key: key });
         return (result === undefined) ? undefined : result.content;
     }
     deleteConfig(key: string): void {
         this.db.prepare(`
-            DELETE FROM config WHERE key = :key
+            DELETE FROM config WHERE key = :key;
         `).run({ key: key });
     }
     clearConfig(): void {
         this.db.prepare(`
-            DELETE FROM config
+            DELETE FROM config;
         `).run();
     }
 
@@ -105,14 +109,36 @@ export class DriverSqlite implements IStorageDriver {
         return [];
     }
     documentQuery(query: QueryOpts2, now: number): Document[] {
-        // TODO
-        return [];
+        // TODO: make fancy query
+        let queryString = '';
+        queryString = `
+            SELECT * FROM docs
+            -- where...
+            ORDER BY path ASC, timestamp DESC, signature DESC -- break ties with signature
+            -- limit...
+        `;
+        logDebug('driverSqlite.documentQuery(query, now)');
+        logDebug('query:', query);
+        logDebug('queryString:', queryString);
+        let docs: Document[] = this.db.prepare(queryString).all({});
+        logDebug(`result: ${docs.length} docs`);
+        docs.forEach(doc => Object.freeze(doc));
+        return docs;
     }
     upsertDocument(doc: Document): void {
-        // TODO
+        // Insert new doc, replacing old doc if there is one
+        logDebug(`driverSqlite.upsertDocument(doc.path: ${JSON.stringify(doc.path)})`);
+        this.db.prepare(`
+            INSERT OR REPLACE INTO docs (format, workspace, path, contentHash, content, author, timestamp, deleteAfter, signature)
+            VALUES (:format, :workspace, :path, :contentHash, :content, :author, :timestamp, :deleteAfter, :signature);
+        `).run(doc);
     }
     removeExpiredDocuments(now: number): void {
-        // TODO
+        logDebug('driverSqlite.removeExpiredDocuments(now)');
+        this.db.prepare(`
+            DELETE FROM docs
+            WHERE deleteAfter NOT NULL AND deleteAfter < :now;
+        `).run({ now });
     }
     close(): void {
         this.db.close();

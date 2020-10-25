@@ -39,7 +39,8 @@ export interface IStorage2 {
 }
 
 export interface IStorageDriver {
-    // driver is responsible for:
+    // Driver for storage of one workspace.
+    // Driver is responsible for:
     //   actually saving, loading, querying documents
     //   freezing documents
     //   cleanUpQuery
@@ -49,10 +50,11 @@ export interface IStorageDriver {
     //      on begin()
     //      on close()
     //   optionally, can also delete them when encountering them in a query.
-    // driver does NOT:
+    // Driver does NOT:
     //   no validation (documents, workspace addresses, ...
-    //     ...timestamps & expiration of docs to be written...)
-    //   no check if overwrites are by more recent documents
+    //     ...timestamps & expiration of docs to be written,
+    //     ...making sure workspace matches the rest of the driver
+    //   no check if overwrites are by more recent documents.  just write it.
 
     // IStorage calls this before doing any other driver operations
     begin(megaStorage: IStorage2, workspace: WorkspaceAddress): void;
