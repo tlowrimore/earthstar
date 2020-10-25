@@ -35,11 +35,37 @@ export class DriverSqlite implements IStorageDriver {
         this.removeExpiredDocuments(Date.now() * 1000);
 
         this.db = sqlite(this._fn);
+
+        this._ensureTables();
+
+        let schemaVersion = this.getConfig('schemaVersion');
+        if (schemaVersion === undefined) {
+            schemaVersion = '1';
+            this.setConfig('schemaVersion', schemaVersion);
+        } else if (schemaVersion !== '1') {
+            throw new Error(`sqlite file ${this._fn} has unknown schema version ${schemaVersion}`);
+        }
     }
 
     _ensureTables() {
+        // for each path and author we can have at most one document
+        this.db.prepare(`
+            CREATE TABLE IF NOT EXISTS docs (
+                format TEXT NOT NULL,
+                workspace TEXT NOT NULL,
+                path TEXT NOT NULL,
+                contentHash TEXT NOT NULL,
+                content TEXT NOT NULL, -- TODO: allow null
+                author TEXT NOT NULL,
+                timestamp NUMBER NOT NULL,
+                deleteAfter NUMBER,  -- can be null
+                signature TEXT NOT NULL,
+                PRIMARY KEY(path, author)
+            );
+        `).run();
         // the config table is used to store these variables:
         //     workspace - the workspace this store was created for
+        //     schemaVersion
         this.db.prepare(`
             CREATE TABLE IF NOT EXISTS config (
                 key TEXT NOT NULL PRIMARY KEY,
@@ -47,6 +73,7 @@ export class DriverSqlite implements IStorageDriver {
             );
         `).run();
     }
+
     setConfig(key: string, content: string): void {
         this.db.prepare(`
             INSERT OR REPLACE INTO config (key, content) VALUES (:key, :content);
@@ -88,6 +115,6 @@ export class DriverSqlite implements IStorageDriver {
         // TODO
     }
     close(): void {
-        // TODO
+        this.db.close();
     }
 }

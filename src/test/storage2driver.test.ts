@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import t = require('tap');
-//t.runOnly = true;
+t.runOnly = true;
 
 import {
     AuthorKeypair,
@@ -66,22 +66,22 @@ interface Scenario {
     description: string,
 }
 let scenarios : Scenario[] = [
-    {
-        makeDriver: (workspace: WorkspaceAddress): IStorageDriver => {
-            let driver = new DriverMemory();
-            driver.begin(null as any, workspace);
-            return driver;
-        },
-        description: 'DriverMemory',
-    },
     //{
     //    makeDriver: (workspace: WorkspaceAddress): IStorageDriver => {
-    //        let driver = new DriverSqlite(':memory:');
+    //        let driver = new DriverMemory();
     //        driver.begin(null as any, workspace);
     //        return driver;
     //    },
-    //    description: 'DriverSqlite',
+    //    description: 'DriverMemory',
     //},
+    {
+        makeDriver: (workspace: WorkspaceAddress): IStorageDriver => {
+            let driver = new DriverSqlite(':memory:');
+            driver.begin(null as any, workspace);
+            return driver;
+        },
+        description: 'DriverSqlite',
+    },
 ];
 
 type MakeDocOpts = {
