@@ -101,32 +101,80 @@ export class DriverSqlite implements IStorageDriver {
     }
 
     authors(now: number): AuthorAddress[] {
-        // TODO
-        return [];
+        logDebug('driverSqlite.authors(now)');
+        let docs: Document[] = this.db.prepare(`
+            SELECT DISTINCT author FROM docs
+            -- permanent docs, or ephemeral docs that are not expired yet
+            WHERE deleteAfter IS NULL OR :now <= deleteAfter
+            ORDER BY author;
+        `).all({ now });
+        return docs.map(doc => doc.author);
     }
-    pathQuery(query: QueryOpts2, now: number): string[] {
-        // TODO
-        return [];
-    }
-    documentQuery(query: QueryOpts2, now: number): Document[] {
-        // TODO: make fancy query
-        let queryString = '';
-        queryString = `
-            SELECT * FROM docs
-            -- where...
+    _makeDocQuerySql(query: QueryOpts2, now: number, mode: 'documents' | 'paths'):
+        { sql: string, params: Record<string, any> }
+        {
+
+        let sql = '';
+
+        let select = '';
+
+        let wheres: string[] = [];
+        let params: Record<string, any> = {};
+
+        if (mode === 'documents') {
+            select = 'SELECT * FROM docs';
+        } else if (mode === 'paths') {
+            select = 'SELECT DISTINCT path FROM docs';
+        }
+
+        // use the query
+        if (query.path !== undefined) {
+            wheres.push('path = :path');
+            params.path = query.path;
+        }
+        if (query.pathPrefix !== undefined) {
+            // escape existing % and _ in the prefix
+            // so they don't count as wildcards for LIKE
+            wheres.push("path LIKE (:prefix || '%') ESCAPE '\\'");
+            params.prefix = query.pathPrefix
+                .split('_').join('\\_')
+                .split('%').join('\\%');
+        }
+
+        // assemble the final sql
+        let allWheres = wheres.length === 0
+            ? ''
+            : 'WHERE ' + wheres.join(' AND ');
+        sql = `
+            ${select}
+            ${allWheres}
             ORDER BY path ASC, timestamp DESC, signature DESC -- break ties with signature
             -- limit...
         `;
+        return { sql, params };
+    }
+    pathQuery(query: QueryOpts2, now: number): string[] {
+        let { sql, params } = this._makeDocQuerySql(query, now, 'paths');
+        logDebug('driverSqlite.pathQuery(query, now)');
+        logDebug('query:', query);
+        logDebug('sql:', sql);
+        let paths: string[] = this.db.prepare(sql).all(params).map(doc => doc.path);
+        logDebug(`result: ${paths.length} paths`);
+        return paths;
+    }
+    documentQuery(query: QueryOpts2, now: number): Document[] {
+        let { sql, params } = this._makeDocQuerySql(query, now, 'documents');
         logDebug('driverSqlite.documentQuery(query, now)');
         logDebug('query:', query);
-        logDebug('queryString:', queryString);
-        let docs: Document[] = this.db.prepare(queryString).all({});
-        logDebug(`result: ${docs.length} docs`);
+        logDebug('sql:', sql);
+        let docs: Document[] = this.db.prepare(sql).all(params);
         docs.forEach(doc => Object.freeze(doc));
+        logDebug(`result: ${docs.length} docs`);
         return docs;
     }
     upsertDocument(doc: Document): void {
         // Insert new doc, replacing old doc if there is one
+        Object.freeze(doc);
         logDebug(`driverSqlite.upsertDocument(doc.path: ${JSON.stringify(doc.path)})`);
         this.db.prepare(`
             INSERT OR REPLACE INTO docs (format, workspace, path, contentHash, content, author, timestamp, deleteAfter, signature)

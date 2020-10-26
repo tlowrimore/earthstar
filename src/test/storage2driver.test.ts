@@ -1,6 +1,5 @@
-import * as fs from 'fs';
 import t = require('tap');
-t.runOnly = true;
+//t.runOnly = true;
 
 import {
     AuthorKeypair,
@@ -121,7 +120,7 @@ for (let scenario of scenarios) {
         t.end();
     });
 
-    t.only('empty storage', (t: any) => {
+    t.test('empty storage', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
         t.same(driver.authors(now), [], 'empty authors');
         t.same(driver.pathQuery({}, now), [], 'empty path query');
@@ -154,7 +153,7 @@ for (let scenario of scenarios) {
     });
 
 
-    t.only('upsert: always overwrite same-path-same-author', (t: any) => {
+    t.test('upsert: always overwrite same-path-same-author', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
 
         let base = { workspace: WORKSPACE };
