@@ -213,6 +213,32 @@ export class DriverSqlite implements IStorageDriver {
             ORDER BY path ASC, timestamp DESC, signature DESC -- break ties with signature
             ${limit};
         `;
+
+        /*
+        a regular query looks like:
+            SELECT format, workspace, ... timestamp FROM docs
+            WHERE path, pathPrefix, timestamp, author, contentSize
+            ORDER BY
+            LIMIT
+
+        if we just did "GROUP BY path" to the above query, after WHERE,
+        we'd get "the latest of the matches in each path", not true heads.
+
+        an isHead query needs to look like this, to only get
+        actual heads and not just "the latest of the matches in each path":
+
+            SELECT format, workspace, ... MAX(timestamp) as timestamp FROM docs
+            -- first level of filtering happens before finding the head
+            -- these are only things that are the same for all docs in a path
+            WHERE path, pathPrefix
+            GROUP BY path
+            -- second level of filtering happens AFTER finding the head
+            -- these are things that can differ for docs within a path
+            HAVING timestamp, author, contentSize
+            ORDER BY
+            LIMIT
+        */
+
         return { sql, params };
     }
     pathQuery(query: QueryOpts2, now: number): string[] {
