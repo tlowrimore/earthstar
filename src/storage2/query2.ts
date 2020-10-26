@@ -30,7 +30,9 @@ export interface QueryOpts2 {
     contentSize_gt?: number,
     contentSize_lt?: number,
 
-    isHead?: boolean,  // true to only get head, omit to get all
+    isHead?: boolean,  // true to only get head, omit to get all.
+                       // this is the actual overall latest doc per path,
+                       // not just the latest doc per path that passes the rest of the query.
 
     limit?: number, // for paths, applies to number of unique paths, not original docs
     limitBytes?: number,  // sum of content bytes <= limitBytes (stop as soon as possible)

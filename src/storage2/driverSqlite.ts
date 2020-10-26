@@ -270,7 +270,9 @@ export class DriverSqlite implements IStorageDriver {
             let bytes = 0;
             for (let ii = 0; ii < docs.length; ii++) {
                 let doc = docs[ii];
-                let len = doc.content.length;
+                // count content length in bytes in utf-8 encoding, not number of characters
+                // https://stackoverflow.com/questions/5515869/string-length-in-bytes-in-javascript
+                let len = Buffer.byteLength(doc.content, 'utf-8');
                 bytes += len;
                 // if we hit limitBytes but the next item's content is '',
                 // return early (don't include the empty item)

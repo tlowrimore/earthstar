@@ -137,12 +137,15 @@ export class DriverMemory implements IStorageDriver {
         if (query.limit !== undefined) {
             results = results.slice(0, query.limit);
         }
-        // TODO: count byte length of utf-8, not character length
+
         if (query.limitBytes !== undefined) {
             let bytes = 0;
             for (let ii = 0; ii < results.length; ii++) {
                 let doc = results[ii];
-                let len = doc.content.length;
+                // count content length in bytes in utf-8 encoding, not number of characters
+                // TODO: test this works in browsers
+                // https://stackoverflow.com/questions/5515869/string-length-in-bytes-in-javascript
+                let len = Buffer.byteLength(doc.content, 'utf-8');
                 bytes += len;
                 // if we hit limitBytes but the next item's content is '',
                 // return early (don't include the empty item)
@@ -152,7 +155,6 @@ export class DriverMemory implements IStorageDriver {
                 }
             }
         }
-
 
         return results;
     }

@@ -355,6 +355,7 @@ for (let scenario of scenarios) {
                 matches: [i.d0, i.d1, i.d2, i.d3, i.d4, i.d5],
             },
             // LIMIT BYTES
+            // TODO: test with unicode characters -- should count bytes, not characters
             {
                 query: { limitBytes: 0 },
                 matches: [],  // don't even get the first '', stop as soon as possible
