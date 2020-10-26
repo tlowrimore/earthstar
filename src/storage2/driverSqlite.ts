@@ -63,7 +63,12 @@ export class DriverSqlite implements IStorageDriver {
 
     _ensureTables() {
         // for each path and author we can have at most one document
+
         // TODO: change content to BLOB and make sure it's inserted as an actual BLOB
+        // https://sqlite.org/forum/forumpost/4255ad6f19
+        // or do length(cast(foo AS BLOB))
+        // this is needed to make length return bytes and not unicode codepoints
+
         this.db.prepare(`
             CREATE TABLE IF NOT EXISTS docs (
                 format TEXT NOT NULL,
