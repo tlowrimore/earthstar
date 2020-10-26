@@ -140,36 +140,81 @@ export class DriverSqlite implements IStorageDriver {
                 .split('_').join('\\_')
                 .split('%').join('\\%');
         }
+        if (query.timestamp !== undefined) {
+            wheres.push('timestamp = :timestamp');
+            params.timestamp = query.timestamp;
+        }
+        if (query.timestamp_gt !== undefined) {
+            wheres.push('timestamp > :timestamp_gt');
+            params.timestamp_gt = query.timestamp_gt;
+        }
+        if (query.timestamp_lt !== undefined) {
+            wheres.push('timestamp < :timestamp_lt');
+            params.timestamp_lt = query.timestamp_lt;
+        }
+        if (query.author !== undefined) {
+            wheres.push('author = :author');
+            params.author = query.author;
+        }
+        // TODO: when content can be null, make sure to skip null-content docs here.
+        // (though we could check if contentHash is the known has of an empty string)
+        // Sqlite length() returns characters, not bytes, for TEXT.
+        // To get bytes the data must be stored as BLOB.
+        // TODO: store content as BLOB.
+        if (query.contentSize !== undefined) {
+            wheres.push('length(content) = :contentSize');
+            params.contentSize = query.contentSize;
+        }
+        if (query.contentSize_gt !== undefined) {
+            wheres.push('length(content) > :contentSize_gt');
+            params.contentSize_gt = query.contentSize_gt;
+        }
+        if (query.contentSize_lt !== undefined) {
+            wheres.push('length(content) < :contentSize_lt');
+            params.contentSize_lt = query.contentSize_lt;
+        }
+
+        // TODO: isHead
+
+        let limit = '';
+        if (query.limit !== undefined) {
+            limit = 'LIMIT :limit';
+            params.limit = query.limit;
+        }
+
+        // TODO: limitBytes
 
         // assemble the final sql
         let allWheres = wheres.length === 0
             ? ''
-            : 'WHERE ' + wheres.join(' AND ');
+            : 'WHERE ' + wheres.join('\n  AND ');
         sql = `
             ${select}
             ${allWheres}
             ORDER BY path ASC, timestamp DESC, signature DESC -- break ties with signature
-            -- limit...
+            ${limit};
         `;
         return { sql, params };
     }
     pathQuery(query: QueryOpts2, now: number): string[] {
         let { sql, params } = this._makeDocQuerySql(query, now, 'paths');
         logDebug('driverSqlite.pathQuery(query, now)');
-        logDebug('query:', query);
-        logDebug('sql:', sql);
+        logDebug('  query:', query);
+        logDebug('  sql:', sql);
+        logDebug('  params:', params);
         let paths: string[] = this.db.prepare(sql).all(params).map(doc => doc.path);
-        logDebug(`result: ${paths.length} paths`);
+        logDebug(`  result: ${paths.length} paths`);
         return paths;
     }
     documentQuery(query: QueryOpts2, now: number): Document[] {
         let { sql, params } = this._makeDocQuerySql(query, now, 'documents');
         logDebug('driverSqlite.documentQuery(query, now)');
-        logDebug('query:', query);
-        logDebug('sql:', sql);
+        logDebug('  query:', query);
+        logDebug('  sql:', sql);
+        logDebug('  params:', params);
         let docs: Document[] = this.db.prepare(sql).all(params);
         docs.forEach(doc => Object.freeze(doc));
-        logDebug(`result: ${docs.length} docs`);
+        logDebug(`  result: ${docs.length} docs`);
         return docs;
     }
     upsertDocument(doc: Document): void {

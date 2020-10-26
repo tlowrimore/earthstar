@@ -26,13 +26,13 @@ export interface QueryOpts2 {
 
     author?: AuthorAddress,
 
-    contentSize?: number,
+    contentSize?: number,  // in bytes as utf-8.  skip sparse documents with null content
     contentSize_gt?: number,
     contentSize_lt?: number,
 
     isHead?: boolean,  // true to only get head, omit to get all
 
-    limit?: number,
+    limit?: number, // for paths, applies to number of unique paths, not original docs
     limitBytes?: number,  // sum of content bytes <= limitBytes
 
     // sort?: 'newest' | 'oldest' | 'path',  // default is path

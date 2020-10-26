@@ -1,5 +1,5 @@
 import t = require('tap');
-//t.runOnly = true;
+t.runOnly = true;
 
 import {
     AuthorKeypair,
@@ -202,7 +202,7 @@ for (let scenario of scenarios) {
         t.end();
     });
 
-    t.test('documentQuery and pathQuery', (t: any) => {
+    t.only('documentQuery and pathQuery', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
 
         let base = { workspace: WORKSPACE };
@@ -221,6 +221,7 @@ for (let scenario of scenarios) {
         type TestCase = {
             query: QueryOpts2,
             matches: Document[],
+            pathMatches?: Document[], // if path query gives a different result than doc query
             note?: string,
         }
         let testCases: TestCase[] = [
@@ -289,6 +290,14 @@ for (let scenario of scenarios) {
                 query: { timestamp_lt: now + 1 },
                 matches: [i.d0, i.d1, i.d2, i.d5],
             },
+            {
+                query: { timestamp_gt: 1, timestamp_lt: now + 1 },
+                matches: [i.d0, i.d1, i.d2, i.d5],
+            },
+            {
+                query: { timestamp_lt: 1, timestamp_gt: now + 1 },
+                matches: [],
+            },
             // AUTHOR
             {
                 query: { author: author1 },
@@ -299,6 +308,7 @@ for (let scenario of scenarios) {
                 matches: [],
             },
             // CONTENT SIZE
+            // TODO: test contentSize with utf-8 characters vs bytes
             {
                 query: { contentSize: 0 },
                 matches: [i.d0, i.d4],
@@ -315,11 +325,13 @@ for (let scenario of scenarios) {
                 query: { contentSize_lt: 2 },
                 matches: [i.d0, i.d1, i.d4],
             },
+            /*
             // ISHEAD
             {
                 query: { isHead: true },
                 matches: [i.d0, i.d1, i.d2, i.d4, i.d5],  // not d3
             },
+            */
             // LIMIT
             {
                 query: { limit: 0 },
@@ -330,13 +342,19 @@ for (let scenario of scenarios) {
                 matches: [i.d0],
             },
             {
-                query: { limit: 3 },
-                matches: [i.d0, i.d1, i.d2],
+                query: { limit: 5 },
+                // the first 5 documents only have 4 distinct paths between them.
+                // so the first 5 distinct paths reach a little further.
+                // (limit is applied after distinct-ifying paths)
+                matches: [i.d0, i.d1, i.d2, i.d3, i.d4],
+                pathMatches: [i.d0, i.d1, i.d2, i.d3, i.d5],
+                note: 'limit should be applied after distinct paths',
             },
             {
                 query: { limit: 999 },
                 matches: [i.d0, i.d1, i.d2, i.d3, i.d4, i.d5],
             },
+            /*
             // LIMIT BYTES
             {
                 query: { limitBytes: 0 },
@@ -354,6 +372,7 @@ for (let scenario of scenarios) {
                 query: { limitBytes: 3 },
                 matches: [i.d0, i.d1, i.d2, i.d4],  // '' + '1' + '22' + '' = 3 bytes
             },
+            */
         ];
         for (let testCase of testCases) {
             testCase.matches.sort(historySortFn);
@@ -371,8 +390,9 @@ for (let scenario of scenarios) {
         }
 
         // test pathQuery
-        for (let { query, matches, note } of testCases) {
+        for (let { query, matches, pathMatches, note } of testCases) {
             note = (note || '') + ' ' + JSON.stringify(query);
+            if (pathMatches !== undefined) { matches = pathMatches; }
             let expectedPaths = uniq(matches.map(m => m.path));
             expectedPaths.sort();
             let actualPaths = driver.pathQuery(query, now);
