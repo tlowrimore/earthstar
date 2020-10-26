@@ -10,14 +10,11 @@ import {
     WorkspaceAddress,
 } from '../util/types';
 import {
-    IStorage2,
     IStorageDriver,
 } from './types2';
 import {
     QueryOpts2,
     cleanUpQuery,
-    historySortFn,
-    queryMatchesDoc,
 } from './query2';
 import { logDebug } from '../util/log';
 
@@ -66,13 +63,14 @@ export class DriverSqlite implements IStorageDriver {
 
     _ensureTables() {
         // for each path and author we can have at most one document
+        // TODO: change content to BLOB and make sure it's inserted as an actual BLOB
         this.db.prepare(`
             CREATE TABLE IF NOT EXISTS docs (
                 format TEXT NOT NULL,
                 workspace TEXT NOT NULL,
                 path TEXT NOT NULL,
                 contentHash TEXT NOT NULL,
-                content TEXT NOT NULL, -- TODO: allow null
+                content TEXT NOT NULL, -- TODO: allow null, change to BLOB
                 author TEXT NOT NULL,
                 timestamp NUMBER NOT NULL,
                 deleteAfter NUMBER,  -- can be null
