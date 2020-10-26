@@ -3,7 +3,6 @@ import sqlite = require('better-sqlite3');
 import {
     Database as SqliteDatabase
 } from 'better-sqlite3';
-import { deepEqual } from 'fast-equals';
 
 import {
     AuthorAddress,
@@ -31,7 +30,7 @@ export class DriverSqlite implements IStorageDriver {
     constructor(fn: string) {
         this._fn = fn;
     }
-    begin(storage2: IStorage2, workspace: WorkspaceAddress): void {
+    begin(workspace: WorkspaceAddress): void {
         logDebug(`driverSqlite.begin(workspace: ${workspace})`);
         this._workspace = workspace;
 
@@ -47,6 +46,20 @@ export class DriverSqlite implements IStorageDriver {
         } else if (schemaVersion !== '1') {
             throw new Error(`sqlite file ${this._fn} has unknown schema version ${schemaVersion}`);
         }
+
+        // TODO: check if workspace matches existing data in the file
+        // TODO: creation modes:
+        //   mode: create
+        //   workspace: required
+        //   file must not exist yet
+        //
+        //   mode: open
+        //   workspace: optional
+        //   file must exist
+        //
+        //   mode: create-or-open  (ensure it exists, create if necessary)
+        //   workspace: required
+        //   file may or may not exist
 
         this.removeExpiredDocuments(Date.now() * 1000);
     }
@@ -182,7 +195,13 @@ export class DriverSqlite implements IStorageDriver {
             params.limit = query.limit;
         }
 
-        // TODO: limitBytes
+        // limitBytes is skipped here.
+        // it's applied after the query is run,
+        // and only for docs (not paths).
+
+        // filter out expired docs
+        wheres.push('(deleteAfter IS NULL OR :now <= deleteAfter)');
+        params.now = now;
 
         // assemble the final sql
         let allWheres = wheres.length === 0
@@ -197,6 +216,9 @@ export class DriverSqlite implements IStorageDriver {
         return { sql, params };
     }
     pathQuery(query: QueryOpts2, now: number): string[] {
+        query = cleanUpQuery(query);
+        if (query.limit === 0) { return []; }
+
         let { sql, params } = this._makeDocQuerySql(query, now, 'paths');
         logDebug('driverSqlite.pathQuery(query, now)');
         logDebug('  query:', query);
@@ -207,12 +229,32 @@ export class DriverSqlite implements IStorageDriver {
         return paths;
     }
     documentQuery(query: QueryOpts2, now: number): Document[] {
+        query = cleanUpQuery(query);
+        if (query.limit === 0 || query.limitBytes === 0) { return []; }
+
         let { sql, params } = this._makeDocQuerySql(query, now, 'documents');
         logDebug('driverSqlite.documentQuery(query, now)');
         logDebug('  query:', query);
         logDebug('  sql:', sql);
         logDebug('  params:', params);
         let docs: Document[] = this.db.prepare(sql).all(params);
+
+        // TODO: count byte length of utf-8, not character length
+        if (query.limitBytes !== undefined) {
+            let bytes = 0;
+            for (let ii = 0; ii < docs.length; ii++) {
+                let doc = docs[ii];
+                let len = doc.content.length;
+                bytes += len;
+                // if we hit limitBytes but the next item's content is '',
+                // return early (don't include the empty item)
+                if (bytes > query.limitBytes || (bytes === query.limitBytes && len === 0)) {
+                    docs = docs.slice(0, ii);
+                    break;
+                }
+            }
+        }
+
         docs.forEach(doc => Object.freeze(doc));
         logDebug(`  result: ${docs.length} docs`);
         return docs;

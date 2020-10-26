@@ -1,5 +1,5 @@
 import t = require('tap');
-t.runOnly = true;
+//t.runOnly = true;
 
 import {
     AuthorKeypair,
@@ -65,18 +65,18 @@ interface Scenario {
     description: string,
 }
 let scenarios : Scenario[] = [
-    //{
-    //    makeDriver: (workspace: WorkspaceAddress): IStorageDriver => {
-    //        let driver = new DriverMemory();
-    //        driver.begin(null as any, workspace);
-    //        return driver;
-    //    },
-    //    description: 'DriverMemory',
-    //},
+    {
+        makeDriver: (workspace: WorkspaceAddress): IStorageDriver => {
+            let driver = new DriverMemory();
+            driver.begin(workspace);
+            return driver;
+        },
+        description: 'DriverMemory',
+    },
     {
         makeDriver: (workspace: WorkspaceAddress): IStorageDriver => {
             let driver = new DriverSqlite(':memory:');
-            driver.begin(null as any, workspace);
+            driver.begin(workspace);
             return driver;
         },
         description: 'DriverSqlite',
@@ -120,7 +120,7 @@ for (let scenario of scenarios) {
         t.end();
     });
 
-    t.test('empty storage', (t: any) => {
+    t.test(scenario.description + ': empty storage', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
         t.same(driver.authors(now), [], 'empty authors');
         t.same(driver.pathQuery({}, now), [], 'empty path query');
@@ -129,7 +129,9 @@ for (let scenario of scenarios) {
         t.end();
     });
 
-    t.test('config', (t: any) => {
+    // TODO: make sure the driver is running cleanUpQuery?
+
+    t.test(scenario.description + ': config', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
         t.same(driver.getConfig('foo'), undefined, 'get of unknown key is undefined');
 
@@ -153,7 +155,7 @@ for (let scenario of scenarios) {
     });
 
 
-    t.test('upsert: always overwrite same-path-same-author', (t: any) => {
+    t.test(scenario.description + ': upsert: always overwrite same-path-same-author', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
 
         let base = { workspace: WORKSPACE };
@@ -173,7 +175,7 @@ for (let scenario of scenarios) {
         t.end();
     });
 
-    t.test('upsert and authors: basic roundtrip', (t: any) => {
+    t.test(scenario.description + ': upsert and authors: basic roundtrip', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
 
         let base = { workspace: WORKSPACE };
@@ -202,7 +204,7 @@ for (let scenario of scenarios) {
         t.end();
     });
 
-    t.only('documentQuery and pathQuery', (t: any) => {
+    t.test(scenario.description + ': documentQuery and pathQuery', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
 
         let base = { workspace: WORKSPACE };
@@ -325,13 +327,11 @@ for (let scenario of scenarios) {
                 query: { contentSize_lt: 2 },
                 matches: [i.d0, i.d1, i.d4],
             },
-            /*
             // ISHEAD
             {
                 query: { isHead: true },
                 matches: [i.d0, i.d1, i.d2, i.d4, i.d5],  // not d3
             },
-            */
             // LIMIT
             {
                 query: { limit: 0 },
@@ -354,25 +354,28 @@ for (let scenario of scenarios) {
                 query: { limit: 999 },
                 matches: [i.d0, i.d1, i.d2, i.d3, i.d4, i.d5],
             },
-            /*
             // LIMIT BYTES
             {
                 query: { limitBytes: 0 },
-                matches: [],
+                matches: [],  // don't even get the first '', stop as soon as possible
+                // path queries ignore limitBytes
+                pathMatches: [i.d0, i.d1, i.d2, i.d3, i.d4, i.d5],
             },
             {
                 query: { limitBytes: 1 },
-                matches: [i.d0, i.d1],  // '' + '1' = 1 byte
+                matches: [i.d0, i.d1],  // '' + '1' <= 1 byte
+                pathMatches: [i.d0, i.d1, i.d2, i.d3, i.d4, i.d5],
             },
             {
                 query: { limitBytes: 2 },
-                matches: [i.d0, i.d1],  // '' + '1' = 1 byte
+                matches: [i.d0, i.d1],  // '' + '1' <= 1 byte
+                pathMatches: [i.d0, i.d1, i.d2, i.d3, i.d4, i.d5],
             },
             {
                 query: { limitBytes: 3 },
-                matches: [i.d0, i.d1, i.d2, i.d4],  // '' + '1' + '22' + '' = 3 bytes
+                matches: [i.d0, i.d1, i.d2],  // '' + '1' + '22' <= 3 bytes, don't get the following ''
+                pathMatches: [i.d0, i.d1, i.d2, i.d3, i.d4, i.d5],
             },
-            */
         ];
         for (let testCase of testCases) {
             testCase.matches.sort(historySortFn);
@@ -403,7 +406,9 @@ for (let scenario of scenarios) {
         t.end();
     });
 
-    t.test('removeExpiredDocuments', (t: any) => {
+    // TODO: check that expired docs are not returned from queries
+
+    t.test(scenario.description + ': removeExpiredDocuments', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
 
         // this should not crash

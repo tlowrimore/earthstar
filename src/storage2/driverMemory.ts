@@ -19,12 +19,10 @@ import {
 export class DriverMemory implements IStorageDriver {
     _docs: Record<string, Record<string, Document>> = {};  // { path: { author: document }}
     _workspace: WorkspaceAddress = '';
-    _storage2: IStorage2 = null as any as IStorage2;
     _config: Record<string, string> = {};
     constructor() {
     }
-    begin(storage2: IStorage2, workspace: WorkspaceAddress): void {
-        this._storage2 = storage2;
+    begin(workspace: WorkspaceAddress): void {
         this._workspace = workspace;
         this.removeExpiredDocuments(Date.now() * 1000);
     }
@@ -56,19 +54,25 @@ export class DriverMemory implements IStorageDriver {
     pathQuery(query: QueryOpts2, now: number): string[] {
         query = cleanUpQuery(query);
 
-        if (query.limit === 0 || query.limitBytes === 0) { return []; }
-
         // TODO: optimization: if the query only cares about path and pathPrefix,
         // we can just filter through Object.keys(_docs)
         // instead of doing a full documentQuery
         // ... but nope, we have to filter out expired docs
 
-        // remove limits and do query
-        // note we let limitBytes go through to the document query.
-        // the documentQuery also handles removing expired docs for us.
-        let docs = this.documentQuery({ ...query, limit: undefined }, now);
+        if (query.limit === 0) { return []; }
 
-        // get unique paths
+        // Remove limits.
+        // we have to apply the limit to the paths after making them unique,
+        // so, first remove limit and do document query.
+        // we also remove limitBytes because it has no effect on path queries.
+        // (and by the way, documentQuery() also removes expired docs for us.)
+        let docs = this.documentQuery({
+            ...query,
+            limit: undefined,
+            limitBytes: undefined
+        }, now);
+
+        // get unique paths and sort them
         let pathMap: Record<string, boolean> = {};
         for (let doc of docs) {
             pathMap[doc.path] = true;
@@ -76,10 +80,12 @@ export class DriverMemory implements IStorageDriver {
         let paths = Object.keys(pathMap);
         paths.sort();
 
-        // re-apply limits.  ignore limitBytes
+        // re-apply limit
         if (query.limit) {
             paths = paths.slice(0, query.limit);
         }
+
+        // (no need to apply limitBytes since this is a path query)
 
         return paths;
     }
@@ -131,17 +137,22 @@ export class DriverMemory implements IStorageDriver {
         if (query.limit !== undefined) {
             results = results.slice(0, query.limit);
         }
+        // TODO: count byte length of utf-8, not character length
         if (query.limitBytes !== undefined) {
-            let b = 0;
+            let bytes = 0;
             for (let ii = 0; ii < results.length; ii++) {
                 let doc = results[ii];
-                b += doc.content.length;
-                if (b > query.limitBytes) {
+                let len = doc.content.length;
+                bytes += len;
+                // if we hit limitBytes but the next item's content is '',
+                // return early (don't include the empty item)
+                if (bytes > query.limitBytes || (bytes === query.limitBytes && len === 0)) {
                     results = results.slice(0, ii);
                     break;
                 }
             }
         }
+
 
         return results;
     }

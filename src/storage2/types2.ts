@@ -23,6 +23,12 @@ export interface IStorage2 {
 
     // GET DATA OUT
     authors(): AuthorAddress[];
+    // a path query should always be equal to
+    //   unique(documents(query).map(doc => doc.path));
+    // but it may be optimized behind the scenes.
+    // exceptions:
+    //   limit applies to returned items (paths or documents)
+    //   limitBytes only applies to docs, not paths
     paths(query?: QueryOpts2): string[];
     documents(query?: QueryOpts2): Document[];
     contents(query?: QueryOpts2): string[];
@@ -57,7 +63,7 @@ export interface IStorageDriver {
     //   no check if overwrites are by more recent documents.  just write it.
 
     // IStorage calls this before doing any other driver operations
-    begin(megaStorage: IStorage2, workspace: WorkspaceAddress): void;
+    begin(workspace: WorkspaceAddress): void;
 
     // simple key-value store for config settings
     setConfig(key: string, content: string): void;

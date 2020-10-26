@@ -33,7 +33,7 @@ export interface QueryOpts2 {
     isHead?: boolean,  // true to only get head, omit to get all
 
     limit?: number, // for paths, applies to number of unique paths, not original docs
-    limitBytes?: number,  // sum of content bytes <= limitBytes
+    limitBytes?: number,  // sum of content bytes <= limitBytes (stop as soon as possible)
 
     // sort?: 'newest' | 'oldest' | 'path',  // default is path
     // continueAfter: {path, timestamp, ...signature? author? hash?}

@@ -80,7 +80,7 @@ export class Storage2 implements IStorage2 {
         // ok, at least one validator accepted the workspace address
 
         this._driver = driver;
-        this._driver.begin(this, workspace);
+        this._driver.begin(workspace);
     }
     // GET DATA OUT
     authors(): AuthorAddress[] {
