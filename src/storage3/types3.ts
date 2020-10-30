@@ -8,75 +8,39 @@ import {
     WriteEvent,
     WriteResult,
 } from '../util/types';
-import { Emitter } from '../util/emitter';
 import { QueryOpts3 } from './query3';
+import { Emitter } from '../util/emitter';
 
 //================================================================================
 
 export interface IStorage3 {
-    workspace : WorkspaceAddress;
+    readonly workspace : WorkspaceAddress;
     onWrite : Emitter<WriteEvent>;
     _now: number | null;  // used for testing time behavior.  is used instead of Date.now().  normally null.
 
+    // simple key-value store for config settings
+    setConfig(key: string, content: string): void;  // override
+    getConfig(key: string): string | undefined;  // override
+    deleteConfig(key: string): void;  // override
+    deleteAllConfig(): void;  // override
+
     // GET DATA OUT
-    authors(): AuthorAddress[];
-    // a path query should always be equal to
-    //   unique(documents(query).map(doc => doc.path));
-    // but it may be optimized behind the scenes.
-    // exceptions:
-    //   limit applies to returned items (paths or documents)
-    //   limitBytes only applies to docs, not paths
+    documents(query?: QueryOpts3): Document[];  // override
     paths(query?: QueryOpts3): string[];
-    documents(query?: QueryOpts3): Document[];
     contents(query?: QueryOpts3): string[];
-    // TODO: rename from "get" to "latest"
+    authors(): AuthorAddress[];
     getDocument(path: string): Document | undefined;
     getContent(path: string): string | undefined;
 
     // PUT DATA IN
+    _upsertDocument(doc: Document): void;  // override
     ingestDocument(doc: Document, isLocal: boolean): WriteResult | ValidationError;
     set(keypair: AuthorKeypair, docToSet: DocToSet): WriteResult | ValidationError;
 
+    removeExpiredDocuments(now: number): void;  // override
+
     // CLOSE
-    // removeExpiredDocs()?
     close(): void;
     isClosed(): boolean;
-}
-
-interface IStorageDriver {
-    // Driver for storage of one workspace.
-    // Driver is responsible for:
-    //   actually saving, loading, querying documents
-    //   freezing documents
-    //   cleanUpQuery
-    //   filtering out expired documents when doing queries
-    //   deleting all expired docs in at least 1 of these 3 circumstances:
-    //      with a setInterval that it manages, running at least every 60 minutes
-    //      on begin()
-    //      on close()
-    //   optionally, can also delete them when encountering them in a query.
-    // Driver does NOT:
-    //   no validation (documents, workspace addresses, ...
-    //     ...timestamps & expiration of docs to be written,
-    //     ...making sure workspace matches the rest of the driver
-    //   no check if overwrites are by more recent documents.  just write it.
-
-    // IStorage calls this before doing any other driver operations
-    begin(workspace: WorkspaceAddress): void;
-
-    // simple key-value store for config settings
-    setConfig(key: string, content: string): void;
-    getConfig(key: string): string | undefined;
-    deleteConfig(key: string): void;
-    clearConfig(): void;  // delete all
-
-    authors(now: number): AuthorAddress[];  // this includes "deleted" docs with content: '', but ignores expired docs
-    pathQuery(query: QueryOpts3, now: number): string[];
-    documentQuery(query: QueryOpts3, now: number): Document[];
-    upsertDocument(doc: Document): void;  // overwrite existing doc no matter what
-    removeExpiredDocuments(now: number): void;
-
-    // IStorage calls then when the IStorage is closed.
-    // IStorage will never call any driver methods again after calling close().
-    close(): void;
+    removeAndClose(): void  // override
 }

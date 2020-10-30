@@ -35,11 +35,11 @@ export class DriverSqlite implements IStorageDriver {
 
         this._ensureTables();
 
-        let schemaVersion = this.getConfig('schemaVersion');
+        let schemaVersion = this._getConfig('schemaVersion');
         logDebug(`driverSqlite.begin    schemaVersion: ${schemaVersion}`);
         if (schemaVersion === undefined) {
             schemaVersion = '1';
-            this.setConfig('schemaVersion', schemaVersion);
+            this._setConfig('schemaVersion', schemaVersion);
         } else if (schemaVersion !== '1') {
             throw new Error(`sqlite file ${this._fn} has unknown schema version ${schemaVersion}`);
         }
@@ -94,23 +94,23 @@ export class DriverSqlite implements IStorageDriver {
         `).run();
     }
 
-    setConfig(key: string, content: string): void {
+    _setConfig(key: string, content: string): void {
         this.db.prepare(`
             INSERT OR REPLACE INTO config (key, content) VALUES (:key, :content);
         `).run({ key: key, content: content });
     }
-    getConfig(key: string): string | undefined {
+    _getConfig(key: string): string | undefined {
         let result = this.db.prepare(`
             SELECT content FROM config WHERE key = :key;
         `).get({ key: key });
         return (result === undefined) ? undefined : result.content;
     }
-    deleteConfig(key: string): void {
+    _deleteConfig(key: string): void {
         this.db.prepare(`
             DELETE FROM config WHERE key = :key;
         `).run({ key: key });
     }
-    clearConfig(): void {
+    _deleteAllConfig(): void {
         this.db.prepare(`
             DELETE FROM config;
         `).run();
@@ -244,7 +244,7 @@ export class DriverSqlite implements IStorageDriver {
 
         return { sql, params };
     }
-    pathQuery(query: QueryOpts2, now: number): string[] {
+    paths(query: QueryOpts2, now: number): string[] {
         query = cleanUpQuery(query);
         if (query.limit === 0) { return []; }
 
@@ -257,7 +257,7 @@ export class DriverSqlite implements IStorageDriver {
         logDebug(`  result: ${paths.length} paths`);
         return paths;
     }
-    documentQuery(query: QueryOpts2, now: number): Document[] {
+    documents(query: QueryOpts2, now: number): Document[] {
         query = cleanUpQuery(query);
         if (query.limit === 0 || query.limitBytes === 0) { return []; }
 
@@ -290,7 +290,7 @@ export class DriverSqlite implements IStorageDriver {
         logDebug(`  result: ${docs.length} docs`);
         return docs;
     }
-    upsertDocument(doc: Document): void {
+    _upsertDocument(doc: Document): void {
         // Insert new doc, replacing old doc if there is one
         Object.freeze(doc);
         logDebug(`driverSqlite.upsertDocument(doc.path: ${JSON.stringify(doc.path)})`);

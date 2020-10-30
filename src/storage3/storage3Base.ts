@@ -1,26 +1,29 @@
 import { deepEqual } from 'fast-equals';
 
 import {
-    WorkspaceAddress,
-    WriteEvent,
     AuthorAddress,
     AuthorKeypair,
     DocToSet,
-    NotImplementedError,
-    IValidator,
     Document,
-    WriteResult,
-    ValidationError,
+    IValidator,
     StorageIsClosedError,
+    ValidationError,
+    WorkspaceAddress,
+    WriteEvent,
+    WriteResult,
     isErr
 } from '../util/types';
-import { Emitter } from '../util/emitter';
+import {
+    IStorage3
+} from './types3';
 import { QueryOpts3 } from './query3';
+import { Emitter } from '../util/emitter';
 import { uniq, sorted } from '../util/helpers';
 import { sha256base32 } from '../crypto/crypto';
+import { cleanUpQuery } from '../storage2/query2';
 
-export class Storage3Base {
-    workspace : WorkspaceAddress;
+export abstract class Storage3Base implements IStorage3 {
+    readonly workspace : WorkspaceAddress;
     onWrite : Emitter<WriteEvent>;
     _now: number | null = null;
     _isClosed: boolean = false;
@@ -53,6 +56,11 @@ export class Storage3Base {
         if (this._isClosed) { throw new StorageIsClosedError(); }
     }
 
+    abstract setConfig(key: string, content: string): void;
+    abstract getConfig(key: string): string | undefined;
+    abstract deleteConfig(key: string): void;
+    abstract deleteAllConfig(): void;
+
     // TODO
     // config get/set
     // assert not closed
@@ -60,18 +68,25 @@ export class Storage3Base {
     // close and remove all
 
     // GET DATA OUT
-    documents(query?: QueryOpts3): Document[] {
-        // override this method in a subclass
-        this._assertNotClosed();
-        throw new NotImplementedError('storage.documents()');
-    }
+    abstract documents(query?: QueryOpts3): Document[];
     authors(): AuthorAddress[] {
         this._assertNotClosed();
         return sorted(uniq(this.documents({}).map(doc => doc.author)));
     }
-    paths(query?: QueryOpts3): string[] {
+    paths(q?: QueryOpts3): string[] {
         this._assertNotClosed();
-        return sorted(uniq(this.documents(query || {}).map(doc => doc.path)));
+        let query = cleanUpQuery(q || {});
+
+        // TODO: maybe paths should not be based on a full query -- this is inefficient.
+        // to make sure we're counting unique paths, not documents, we have to:
+        // remove limit
+        let queryNoLimit = { ...query, limit: undefined, limitBytes: undefined };
+        // do query
+        let docs = this.documents(queryNoLimit)
+        let paths = sorted(uniq(docs.map(doc => doc.path)));
+        // re-apply limit
+        if (query.limit === undefined) { return paths; }
+        return paths.slice(0, query.limit);
     }
     contents(query?: QueryOpts3): string[] {
         this._assertNotClosed();
@@ -87,11 +102,7 @@ export class Storage3Base {
     }
 
     // PUT DATA IN
-    _upsertDocument(doc: Document): void {
-        // override this method in a subclass
-        this._assertNotClosed();
-        throw new NotImplementedError('storage.documents()');
-    }
+    abstract _upsertDocument(doc: Document): void;
     ingestDocument(doc: Document, isLocal: boolean): WriteResult | ValidationError {
         this._assertNotClosed();
 
@@ -220,7 +231,10 @@ export class Storage3Base {
         return result;
     }
 
+    abstract removeExpiredDocuments(now: number): void;
+
     // CLOSE
     close() { this._isClosed = true; }
     isClosed(): boolean { return this._isClosed; }
+    abstract removeAndClose(): void;
 }

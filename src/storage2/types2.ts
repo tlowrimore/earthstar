@@ -22,16 +22,16 @@ export interface IStorage2 {
     // constructor takes: a driver, a list of validators, and a workspace
 
     // GET DATA OUT
-    authors(): AuthorAddress[];
     // a path query should always be equal to
     //   unique(documents(query).map(doc => doc.path));
     // but it may be optimized behind the scenes.
     // exceptions:
     //   limit applies to returned items (paths or documents)
     //   limitBytes only applies to docs, not paths
-    paths(query?: QueryOpts2): string[];
     documents(query?: QueryOpts2): Document[];
+    paths(query?: QueryOpts2): string[];
     contents(query?: QueryOpts2): string[];
+    authors(): AuthorAddress[];
     // TODO: rename from "get" to "latest"
     getDocument(path: string): Document | undefined;
     getContent(path: string): string | undefined;
@@ -66,15 +66,16 @@ export interface IStorageDriver {
     begin(workspace: WorkspaceAddress): void;
 
     // simple key-value store for config settings
-    setConfig(key: string, content: string): void;
-    getConfig(key: string): string | undefined;
-    deleteConfig(key: string): void;
-    clearConfig(): void;  // delete all
+    _setConfig(key: string, content: string): void;
+    _getConfig(key: string): string | undefined;
+    _deleteConfig(key: string): void;
+    _deleteAllConfig(): void;
 
+    documents(query: QueryOpts2, now: number): Document[];
+    paths(query: QueryOpts2, now: number): string[];
+    //contents?(query: QueryOpts2, now: number): string[];
     authors(now: number): AuthorAddress[];  // this includes "deleted" docs with content: '', but ignores expired docs
-    pathQuery(query: QueryOpts2, now: number): string[];
-    documentQuery(query: QueryOpts2, now: number): Document[];
-    upsertDocument(doc: Document): void;  // overwrite existing doc no matter what
+    _upsertDocument(doc: Document): void;  // overwrite existing doc no matter what
     removeExpiredDocuments(now: number): void;
 
     // IStorage calls then when the IStorage is closed.

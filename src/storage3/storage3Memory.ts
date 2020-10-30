@@ -4,40 +4,143 @@ import {
     WorkspaceAddress,
 } from '../util/types';
 import {
-    IStorage2,
-    IStorageDriver,
-} from './types2';
-import {
-    QueryOpts2,
+    QueryOpts3,
     cleanUpQuery,
     historySortFn,
     queryMatchesDoc,
-} from './query2';
+} from './query3';
+import {
+    Storage3Base,
+} from './storage3Base';
 
 //================================================================================
 
-export class DriverMemory implements IStorageDriver {
+export class Storage3Memory extends Storage3Base {
     _docs: Record<string, Record<string, Document>> = {};  // { path: { author: document }}
-    _workspace: WorkspaceAddress = '';
     _config: Record<string, string> = {};
-    constructor() {
-    }
-    begin(workspace: WorkspaceAddress): void {
-        this._workspace = workspace;
-        this.removeExpiredDocuments(Date.now() * 1000);
-    }
-    _setConfig(key: string, content: string): void {
+
+    setConfig(key: string, content: string): void {
         this._config[key] = content;
     }
-    _getConfig(key: string): string | undefined {
+    getConfig(key: string): string | undefined {
         return this._config[key];
     }
-    _deleteConfig(key: string): void {
+    deleteConfig(key: string): void {
         delete this._config[key];
     }
-    _deleteAllConfig(): void {
+    deleteAllConfig(): void {
         this._config = {};
     }
+
+    documents(q?: QueryOpts3): Document[] {
+        this._assertNotClosed();
+        let query = cleanUpQuery(q || {});
+
+        if (query.limit === 0 || query.limitBytes === 0) { return []; }
+
+        let now = this._now || (Date.now() * 1000);
+        let results: Document[] = [];
+
+        let pathsToConsider = Object.keys(this._docs);
+        /*
+        // which paths should we consider?
+        let pathsToConsider: string[];
+        if (query.path !== undefined) {
+            // optimize when a specific path is requested
+            if (this._docs[query.path] === undefined) { return []; }
+            pathsToConsider = [query.path];
+        } else {
+            // TODO: consider optimizing this more by filtering by pathPrefix here.  benchmark it
+            pathsToConsider = Object.keys(this._docs);
+        }
+        */
+
+        for (let path of pathsToConsider) {
+            // within one path...
+            let pathSlots = this._docs[path];
+            let docsThisPath = Object.values(pathSlots);
+            // only keep head?
+            if (query.isHead) {
+                docsThisPath.sort(historySortFn);  // TODO: would be better to sort on insertion instead of read
+                docsThisPath = [docsThisPath[0]];
+            }
+            // apply the rest of the individual query selectors: path, timestamp, author, contentSize
+            // and skip expired ephemeral docs
+            docsThisPath
+                .filter(doc => queryMatchesDoc(query, doc) && (doc.deleteAfter === null || now <= doc.deleteAfter))
+                .forEach(doc => results.push(doc));
+
+            // TODO: optimize this:
+            // if sort == 'path' and there's a limit,
+            // we could sort pathsToConsider, then if
+            // if we finish one path's documents and either of the
+            // limits are exceeded, we can bail out of this loop
+            // early.  We still have to do the sorting and careful
+            // limit checks below, though.
+        }
+
+        results.sort(historySortFn);
+
+        // apply limit and limitBytes
+        if (query.limit !== undefined) {
+            results = results.slice(0, query.limit);
+        }
+
+        if (query.limitBytes !== undefined) {
+            let bytes = 0;
+            for (let ii = 0; ii < results.length; ii++) {
+                let doc = results[ii];
+                // count content length in bytes in utf-8 encoding, not number of characters
+                // TODO: test this works in browsers
+                // https://stackoverflow.com/questions/5515869/string-length-in-bytes-in-javascript
+                let len = Buffer.byteLength(doc.content, 'utf-8');
+                bytes += len;
+                // if we hit limitBytes but the next item's content is '',
+                // return early (don't include the empty item)
+                if (bytes > query.limitBytes || (bytes === query.limitBytes && len === 0)) {
+                    results = results.slice(0, ii);
+                    break;
+                }
+            }
+        }
+
+        return results;
+    }
+
+    _upsertDocument(doc: Document): void {
+        this._assertNotClosed();
+        Object.freeze(doc);
+        let slots: Record<string, Document> = this._docs[doc.path] || {};
+        slots[doc.author] = doc;
+        this._docs[doc.path] = slots;
+    }
+
+    removeExpiredDocuments(now: number): void {
+        this._assertNotClosed();
+        // using "for... in" on purpose since we're deleting while iterating
+        for (let path in this._docs) {
+            let slots = this._docs[path];
+            // delete expired docs from slots
+            for (let author in slots) {
+                let doc = slots[author];
+                if (doc.deleteAfter !== null && doc.deleteAfter < now) {
+                    delete slots[author];
+                }
+            }
+            // if slots are empty, remove the entire set of slots
+            if (Object.keys(slots).length === 0) {
+                delete this._docs[path];
+            }
+        }
+    }
+
+    removeAndClose(): void {
+        this._docs = {};
+        this._config = {};
+        this.close();
+    }
+
+    /*
     documents(query: QueryOpts2, now: number): Document[] {
         query = cleanUpQuery(query);
 
@@ -145,6 +248,8 @@ export class DriverMemory implements IStorageDriver {
 
         return paths;
     }
+    contents(query: QueryOpts2, now: number): string[] {
+    }
     authors(now: number): AuthorAddress[] {
         let authorMap: Record<string, boolean> = {};
         for (let slots of Object.values(this._docs)) {
@@ -182,4 +287,5 @@ export class DriverMemory implements IStorageDriver {
         }
     }
     close(): void {}
+    */
 }

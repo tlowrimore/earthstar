@@ -123,8 +123,8 @@ for (let scenario of scenarios) {
     t.test(scenario.description + ': empty storage', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
         t.same(driver.authors(now), [], 'empty authors');
-        t.same(driver.pathQuery({}, now), [], 'empty path query');
-        t.same(driver.documentQuery({}, now), [], 'empty document query');
+        t.same(driver.paths({}, now), [], 'empty path query');
+        t.same(driver.documents({}, now), [], 'empty document query');
         driver.close();
         t.end();
     });
@@ -133,22 +133,22 @@ for (let scenario of scenarios) {
 
     t.test(scenario.description + ': config', (t: any) => {
         let driver = scenario.makeDriver(WORKSPACE);
-        t.same(driver.getConfig('foo'), undefined, 'get of unknown key is undefined');
+        t.same(driver._getConfig('foo'), undefined, 'get of unknown key is undefined');
 
-        driver.setConfig('foo', 'bar');
-        t.same(driver.getConfig('foo'), 'bar', 'set and get roundtrip');
+        driver._setConfig('foo', 'bar');
+        t.same(driver._getConfig('foo'), 'bar', 'set and get roundtrip');
 
-        driver.setConfig('foo', 'baz');
-        t.same(driver.getConfig('foo'), 'baz', 'overwrite and get roundtrip');
+        driver._setConfig('foo', 'baz');
+        t.same(driver._getConfig('foo'), 'baz', 'overwrite and get roundtrip');
 
-        driver.setConfig('zzz', 'zzzzz');
-        driver.deleteConfig('foo');
-        t.same(driver.getConfig('foo'), undefined, 'delete, --> undefined');
-        t.same(driver.getConfig('zzz'), 'zzzzz', 'but other keys remain');
+        driver._setConfig('zzz', 'zzzzz');
+        driver._deleteConfig('foo');
+        t.same(driver._getConfig('foo'), undefined, 'delete, --> undefined');
+        t.same(driver._getConfig('zzz'), 'zzzzz', 'but other keys remain');
 
-        driver.clearConfig();
-        t.same(driver.getConfig('foo'), undefined, 'all are gone after clear');
-        t.same(driver.getConfig('zzz'), undefined, 'all are gone after clear');
+        driver._deleteAllConfig();
+        t.same(driver._getConfig('foo'), undefined, 'all are gone after clear');
+        t.same(driver._getConfig('zzz'), undefined, 'all are gone after clear');
 
         driver.close();
         t.end();
@@ -165,8 +165,8 @@ for (let scenario of scenarios) {
             {...base, keypair: keypair1, timestamp: now - 1, path: '/a', content: 'hello'},
         ].map(opts => makeDoc(opts));
 
-        inputDocs.forEach(d => driver.upsertDocument(d));
-        let outputDocs = driver.documentQuery({}, now);
+        inputDocs.forEach(d => driver._upsertDocument(d));
+        let outputDocs = driver.documents({}, now);
 
         t.same(outputDocs.length, 1, 'upsert should overwrite same-path-same-author');
         t.same(outputDocs[0], inputDocs[inputDocs.length-1], 'upsert always overwrites no matter the timestamp');
@@ -186,8 +186,8 @@ for (let scenario of scenarios) {
             {...base, keypair: keypair2, timestamp: now - 1, path: '/b', content: 'hello'},
         ].map(opts => makeDoc(opts));
 
-        inputDocs.forEach(d => driver.upsertDocument(d));
-        let outputDocs = driver.documentQuery({}, now);
+        inputDocs.forEach(d => driver._upsertDocument(d));
+        let outputDocs = driver.documents({}, now);
 
         t.same(outputDocs.length, inputDocs.length, 'upsert should not overwrite these test cases');
         let sortedInputs = [...inputDocs];
@@ -217,7 +217,7 @@ for (let scenario of scenarios) {
             d4: makeDoc({...base, keypair: keypair3, timestamp: now + 2, path: '/b', content: ''}),
             d5: makeDoc({...base, keypair: keypair1, timestamp: now    , path: '/cc/x', content: '55555'}),
         };
-        Object.values(inputDocs).forEach(d => driver.upsertDocument(d));
+        Object.values(inputDocs).forEach(d => driver._upsertDocument(d));
 
         let i = inputDocs;
         type TestCase = {
@@ -385,7 +385,7 @@ for (let scenario of scenarios) {
         // test documentQuery
         for (let { query, matches, note } of testCases) {
             note = (note || '') + ' ' + JSON.stringify(query);
-            let actualMatches = driver.documentQuery(query, now);
+            let actualMatches = driver.documents(query, now);
             if (matches.length !== actualMatches.length) {
                 t.same(actualMatches.length, matches.length, `documentQuery: correct number of results: ${note}`);
             } else {
@@ -399,7 +399,7 @@ for (let scenario of scenarios) {
             if (pathMatches !== undefined) { matches = pathMatches; }
             let expectedPaths = uniq(matches.map(m => m.path));
             expectedPaths.sort();
-            let actualPaths = driver.pathQuery(query, now);
+            let actualPaths = driver.paths(query, now);
             t.same(actualPaths, expectedPaths, `pathQuery: all match: ${note}`);
         }
 
@@ -420,16 +420,16 @@ for (let scenario of scenarios) {
         // a doc that will expire
         let doc2 = makeDoc({workspace: WORKSPACE, keypair: keypair1, path: '/a!', content: 'hello', timestamp: now, deleteAfter: now + 5 });
 
-        driver.upsertDocument(doc1);
-        driver.upsertDocument(doc2);
+        driver._upsertDocument(doc1);
+        driver._upsertDocument(doc2);
 
-        t.same(driver.pathQuery({}, now).length, 2, 'starting off with 2 docs');
+        t.same(driver.paths({}, now).length, 2, 'starting off with 2 docs');
 
         // remove expired docs as if we were in the future
         driver.removeExpiredDocuments(now + 100);
 
         // back in the present, query and only find 1
-        t.same(driver.pathQuery({}, now).length, 1, 'only 1 remains after expired doc was removed');
+        t.same(driver.paths({}, now).length, 1, 'only 1 remains after expired doc was removed');
 
         driver.close();
         t.end();

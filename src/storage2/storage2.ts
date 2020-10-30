@@ -21,6 +21,7 @@ import {
 import { sha256base32 } from '../crypto/crypto';
 import { Emitter } from '../util/emitter';
 import { QueryOpts2 } from './query2';
+import { sorted, uniq } from '../util/helpers';
 
 //================================================================================
 
@@ -83,31 +84,38 @@ export class Storage2 implements IStorage2 {
         this._driver.begin(workspace);
     }
     // GET DATA OUT
-    authors(): AuthorAddress[] {
+    documents(query: QueryOpts2 = {}): Document[] {
         this._assertNotClosed();
         let now = this._now || (Date.now() * 1000);
-        return this._driver.authors(now);
+        return this._driver.documents(query, now);
     }
     paths(query: QueryOpts2 = {}): string[] {
         this._assertNotClosed();
         let now = this._now || (Date.now() * 1000);
-        return this._driver.pathQuery(query, now);
-    }
-    documents(query: QueryOpts2 = {}): Document[] {
-        this._assertNotClosed();
-        let now = this._now || (Date.now() * 1000);
-        return this._driver.documentQuery(query, now);
+        if (this._driver.paths) {
+            return this._driver.paths(query, now);
+        } else {
+            return sorted(uniq(this._driver.documents({}, now).map(doc => doc.path)));
+        }
     }
     contents(query: QueryOpts2 = {}): string[] {
         this._assertNotClosed();
         let now = this._now || (Date.now() * 1000);
-        return this._driver.documentQuery(query, now)
-            .map(doc => doc.content);
+        return this._driver.documents(query, now).map(doc => doc.content);
+    }
+    authors(): AuthorAddress[] {
+        this._assertNotClosed();
+        let now = this._now || (Date.now() * 1000);
+        if (this._driver.authors) {
+            return this._driver.authors(now);
+        } else {
+            return sorted(uniq(this._driver.documents({}, now).map(doc => doc.author)));
+        }
     }
     getDocument(path: string): Document | undefined {
         this._assertNotClosed();
         let now = this._now || (Date.now() * 1000);
-        let doc = this._driver.documentQuery({ path: path, isHead: true }, now);
+        let doc = this._driver.documents({ path: path, isHead: true }, now);
         return doc.length === 0 ? undefined : doc[0];
     }
     getContent(path: string): string | undefined {
@@ -138,7 +146,7 @@ export class Storage2 implements IStorage2 {
         // BEGIN LOCK
 
         // get existing doc from same author, same path
-        let existingSameAuthor : Document | undefined = this._driver.documentQuery({
+        let existingSameAuthor : Document | undefined = this._driver.documents({
             path: doc.path,
             author: doc.author,
         }, now)[0];
@@ -160,7 +168,7 @@ export class Storage2 implements IStorage2 {
         }
 
         // upsert, replacing old doc if there is one
-        this._driver.upsertDocument(doc);
+        this._driver._upsertDocument(doc);
 
         // read it again to see if it's the new latest doc
         let latestDoc = this.getDocument(doc.path);
