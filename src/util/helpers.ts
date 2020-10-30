@@ -22,3 +22,7 @@ export let uniq = (items: string[]) : string[] => {
     }
     return Object.keys(map);
 }
+export let sorted = <T>(items: T[]) : T[] => {
+    items.sort();
+    return items;
+}

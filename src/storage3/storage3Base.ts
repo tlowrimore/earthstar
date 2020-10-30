@@ -1,65 +1,34 @@
 import { deepEqual } from 'fast-equals';
 
 import {
+    WorkspaceAddress,
+    WriteEvent,
     AuthorAddress,
     AuthorKeypair,
     DocToSet,
-    Document,
+    NotImplementedError,
     IValidator,
-    StorageIsClosedError,
-    ValidationError,
-    WorkspaceAddress,
-    WriteEvent,
+    Document,
     WriteResult,
-    isErr,
-    SyncResults,
+    ValidationError,
+    StorageIsClosedError,
+    isErr
 } from '../util/types';
-import {
-    IStorage2,
-    IStorageDriver,
-} from './types2';
-import { sha256base32 } from '../crypto/crypto';
 import { Emitter } from '../util/emitter';
-import { QueryOpts2 } from './query2';
+import { QueryOpts3 } from './query3';
+import { uniq, sorted } from '../util/helpers';
+import { sha256base32 } from '../crypto/crypto';
 
-//================================================================================
-
-export let storage2Push = (storageA: IStorage2, storageB: IStorage2): number => {
-    // return number successfully pushed
-
-    // don't sync with yourself
-    if (storageA === storageB) { return 0; }
-    // don't sync across workspaces
-    if (storageA.workspace !== storageB.workspace) { return 0; }
-
-    let numSuccess = 0;
-    for (let doc of storageA.documents()) {
-        let result = storageB.ingestDocument(doc, false);
-        if (result === WriteResult.Accepted) { numSuccess += 1; }
-    }
-    return numSuccess;
-}
-export let storage2Sync = (storageA: IStorage2, storageB: IStorage2): SyncResults => {
-    return {
-        numPushed: storage2Push(storageA, storageB),
-        numPulled: storage2Push(storageB, storageA),
-    }
-}
-
-export class Storage2 implements IStorage2 {
+export class Storage3Base {
     workspace : WorkspaceAddress;
     onWrite : Emitter<WriteEvent>;
-    onChange : Emitter<undefined>;  // deprecated
-
-    _driver: IStorageDriver;
-    _validatorMap : {[format: string] : IValidator};
+    _now: number | null = null;
     _isClosed: boolean = false;
-    _now: number | null = null;  // used for testing time behavior.  is used instead of Date.now()
+    _validatorMap : {[format: string] : IValidator};
 
-    constructor(driver: IStorageDriver, validators: IValidator[], workspace: WorkspaceAddress) {
+    constructor(validators: IValidator[], workspace: WorkspaceAddress) {
         this.workspace = workspace;
         this.onWrite = new Emitter<WriteEvent>();
-        this.onChange = new Emitter<undefined>();
 
         if (validators.length === 0) {
             throw new ValidationError('must provide at least one validator to Storage');
@@ -78,44 +47,51 @@ export class Storage2 implements IStorage2 {
             throw workspaceErrs[0];
         }
         // ok, at least one validator accepted the workspace address
-
-        this._driver = driver;
-        this._driver.begin(workspace);
     }
+
+    _assertNotClosed(): void {
+        if (this._isClosed) { throw new StorageIsClosedError(); }
+    }
+
+    // TODO
+    // config get/set
+    // assert not closed
+    // remove expired docs
+    // close and remove all
+
     // GET DATA OUT
+    documents(query?: QueryOpts3): Document[] {
+        // override this method in a subclass
+        this._assertNotClosed();
+        throw new NotImplementedError('storage.documents()');
+    }
     authors(): AuthorAddress[] {
         this._assertNotClosed();
-        let now = this._now || (Date.now() * 1000);
-        return this._driver.authors(now);
+        return sorted(uniq(this.documents({}).map(doc => doc.author)));
     }
-    paths(query: QueryOpts2 = {}): string[] {
+    paths(query?: QueryOpts3): string[] {
         this._assertNotClosed();
-        let now = this._now || (Date.now() * 1000);
-        return this._driver.pathQuery(query, now);
+        return sorted(uniq(this.documents(query || {}).map(doc => doc.path)));
     }
-    documents(query: QueryOpts2 = {}): Document[] {
+    contents(query?: QueryOpts3): string[] {
         this._assertNotClosed();
-        let now = this._now || (Date.now() * 1000);
-        return this._driver.documentQuery(query, now);
-    }
-    contents(query: QueryOpts2 = {}): string[] {
-        this._assertNotClosed();
-        let now = this._now || (Date.now() * 1000);
-        return this._driver.documentQuery(query, now)
-            .map(doc => doc.content);
+        return this.documents(query || {}).map(doc => doc.content);
     }
     getDocument(path: string): Document | undefined {
         this._assertNotClosed();
-        let now = this._now || (Date.now() * 1000);
-        let doc = this._driver.documentQuery({ path: path, isHead: true }, now);
-        return doc.length === 0 ? undefined : doc[0];
+        return this.documents({ path: path, limit: 1 })[0];
     }
     getContent(path: string): string | undefined {
         this._assertNotClosed();
-        let doc = this.getDocument(path);
-        return doc === undefined ? undefined : doc.content;
+        return this.getDocument(path)?.content;
     }
+
     // PUT DATA IN
+    _upsertDocument(doc: Document): void {
+        // override this method in a subclass
+        this._assertNotClosed();
+        throw new NotImplementedError('storage.documents()');
+    }
     ingestDocument(doc: Document, isLocal: boolean): WriteResult | ValidationError {
         this._assertNotClosed();
 
@@ -138,10 +114,10 @@ export class Storage2 implements IStorage2 {
         // BEGIN LOCK
 
         // get existing doc from same author, same path
-        let existingSameAuthor : Document | undefined = this._driver.documentQuery({
+        let existingSameAuthor : Document | undefined = this.documents({
             path: doc.path,
             author: doc.author,
-        }, now)[0];
+        })[0];
 
         // there might be an existingSameAuthor that's ephemeral and has expired.
         // if so, it will not have been returned from driver.documentQuery.
@@ -160,7 +136,7 @@ export class Storage2 implements IStorage2 {
         }
 
         // upsert, replacing old doc if there is one
-        this._driver.upsertDocument(doc);
+        this._upsertDocument(doc);
 
         // read it again to see if it's the new latest doc
         let latestDoc = this.getDocument(doc.path);
@@ -175,7 +151,6 @@ export class Storage2 implements IStorage2 {
             isLatest: isLatest,
             document: doc,
         });
-        this.onChange.send(undefined);
 
         return WriteResult.Accepted;
     }
@@ -244,15 +219,8 @@ export class Storage2 implements IStorage2 {
         // END LOCK
         return result;
     }
+
     // CLOSE
-    close(): void {
-        this._isClosed = true;
-        this._driver.close();
-    }
-    isClosed(): boolean {
-        return this._isClosed;
-    }
-    _assertNotClosed(): void {
-        if (this._isClosed) { throw new StorageIsClosedError(); }
-    }
+    close() { this._isClosed = true; }
+    isClosed(): boolean { return this._isClosed; }
 }

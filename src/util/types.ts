@@ -46,6 +46,12 @@ export class ConnectionRefusedError extends EarthstarError {
         this.name = 'ConnectionRefused';
     }
 }
+export class NotImplementedError extends EarthstarError {
+    constructor(message?: string) {
+        super(message || 'not implemented yet');
+        this.name = 'NotImplementedError';
+    }
+}
 
 export let isErr = <T>(x: T | Error): x is EarthstarError =>
     x instanceof EarthstarError;
