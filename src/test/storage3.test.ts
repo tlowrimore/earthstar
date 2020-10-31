@@ -26,7 +26,7 @@ import {
     IStorage3,
 } from '../storage3/types3';
 import {
-    historySortFn, QueryOpts3
+    historySortFn, FancyQuery3
 } from '../storage3/query3';
 import {
     Storage3Memory
@@ -330,7 +330,7 @@ for (let scenario of scenarios) {
 
         let i = inputDocs;
         type TestCase = {
-            query: QueryOpts3,
+            query: FancyQuery3,
             matches: Document[],
             pathMatches?: Document[], // if path query gives a different result than doc query
             note?: string,

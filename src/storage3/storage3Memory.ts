@@ -4,7 +4,7 @@ import {
     WorkspaceAddress,
 } from '../util/types';
 import {
-    QueryOpts3,
+    FancyQuery3,
     cleanUpQuery,
     historySortFn,
     queryMatchesDoc,
@@ -32,7 +32,7 @@ export class Storage3Memory extends Storage3Base {
         this._config = {};
     }
 
-    documents(q?: QueryOpts3): Document[] {
+    documents(q?: FancyQuery3): Document[] {
         this._assertNotClosed();
         let query = cleanUpQuery(q || {});
 

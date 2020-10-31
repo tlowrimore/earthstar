@@ -13,12 +13,16 @@ open questions
     isHead: rename to includeAll?  we rarely want to exclude heads
 
 */
-export interface QueryOpts3 {
 
-    // TODO: workspace?
-
+export interface SimpleQuery3 {
+    // things that are the same for all documents with the same path
     path?: string,
     pathPrefix?: string,
+    limit?: number,
+}
+
+export interface FancyQuery3 extends SimpleQuery3 {
+    // TODO: workspace?
 
     timestamp?: number,
     timestamp_gt?: number,
@@ -34,7 +38,6 @@ export interface QueryOpts3 {
                        // this is the actual overall latest doc per path,
                        // not just the latest doc per path that passes the rest of the query.
 
-    limit?: number, // for paths, applies to number of unique paths, not original docs
     limitBytes?: number,  // sum of content bytes <= limitBytes (stop as soon as possible)
 
     // sort?: 'newest' | 'oldest' | 'path',  // default is path
@@ -46,7 +49,7 @@ const defaultQuery2 = {
     // sort: 'path',
 }
 
-export let cleanUpQuery = (query: QueryOpts3): QueryOpts3 => {
+export let cleanUpQuery = (query: FancyQuery3): FancyQuery3 => {
     // set defaults
     let q = {...defaultQuery2, ...query};
 
@@ -59,7 +62,7 @@ export let cleanUpQuery = (query: QueryOpts3): QueryOpts3 => {
     return q;
 }
 
-export let queryMatchesDoc = (query: QueryOpts3, doc: Document): boolean => {
+export let queryMatchesDoc = (query: FancyQuery3, doc: Document): boolean => {
     if (query.path !== undefined && !(query.path === doc.path)) { return false; }
     if (query.pathPrefix !== undefined && !(doc.path.startsWith(query.pathPrefix))) { return false; }
 

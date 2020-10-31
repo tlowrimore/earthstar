@@ -18,7 +18,7 @@ import {
 } from '../crypto/crypto';
 import { ValidatorEs4 } from '../validator/es4';
 import {
-    QueryOpts3,
+    FancyQuery3,
     cleanUpQuery,
     queryMatchesDoc,
     historySortFn
@@ -85,8 +85,8 @@ let makeDoc = (opts: MakeDocOpts): Document => {
 
 t.test('cleanUpQuery', (t: any) => {
     type TestCase = {
-        query: QueryOpts3,
-        result: QueryOpts3 | 'same',
+        query: FancyQuery3,
+        result: FancyQuery3 | 'same',
         note?: string,
     }
     let testCases: TestCase[] = [
@@ -118,7 +118,7 @@ t.test('queryMatchesDoc', (t: any) => {
 
     let i = inputDocs;
     type TestCase = {
-        query: QueryOpts3,
+        query: FancyQuery3,
         matches: Document[],
         note?: string,
     }

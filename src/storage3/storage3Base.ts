@@ -16,7 +16,7 @@ import {
 import {
     IStorage3
 } from './types3';
-import { QueryOpts3 } from './query3';
+import { SimpleQuery3, FancyQuery3 } from './query3';
 import { Emitter } from '../util/emitter';
 import { uniq, sorted } from '../util/helpers';
 import { sha256base32 } from '../crypto/crypto';
@@ -68,12 +68,12 @@ export abstract class Storage3Base implements IStorage3 {
     // close and remove all
 
     // GET DATA OUT
-    abstract documents(query?: QueryOpts3): Document[];
+    abstract documents(query?: FancyQuery3): Document[];
     authors(): AuthorAddress[] {
         this._assertNotClosed();
         return sorted(uniq(this.documents({}).map(doc => doc.author)));
     }
-    paths(q?: QueryOpts3): string[] {
+    paths(q?: FancyQuery3): string[] {
         this._assertNotClosed();
         let query = cleanUpQuery(q || {});
 
@@ -88,7 +88,7 @@ export abstract class Storage3Base implements IStorage3 {
         if (query.limit === undefined) { return paths; }
         return paths.slice(0, query.limit);
     }
-    contents(query?: QueryOpts3): string[] {
+    contents(query?: FancyQuery3): string[] {
         this._assertNotClosed();
         return this.documents(query || {}).map(doc => doc.content);
     }
