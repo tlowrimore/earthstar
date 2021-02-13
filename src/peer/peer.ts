@@ -1,8 +1,25 @@
 import { IStorageAsync } from '../storage/storageTypes';
 import { WorkspaceAddress } from '../util/types';
 
+
+/**
+ * We need some kind of Peer class.  This file
+ * is a sketch at the jobs it will need to do.
+ * 
+ * Jump down to the EarthstarPeer class
+ * for an overview of its responsibilities.
+ * 
+ * Vocabulary note: we say "peer" here instead of pub.
+ * Every Earthstar instance is a peer.  Pubs are also peers.
+ * In the future, users' apps may be able to connect directly to
+ * each other over hyperswarm, so we need to handle any kind of
+ * peer to peer connection, not just users-to-pubs.
+ */
+
+
 //================================================================================
 
+// States that a peer can be in while it's syncing with another peer
 enum SyncMode {
     Stopped = 'Stopped',  // not connected
     Connecting = 'Connecting',  // establishing a connection
@@ -16,42 +33,49 @@ enum SyncMode {
 // PEERS
 
 type PeerUrl = string;
-// possible peer urls:
+// various kinds of peer urls:
 //    https://mypub.com/rpc -- mini-rpc over REST and Server-Sent Events
 //    wss://mypub.com/rpc  -- mini-rpc over websockets
 //    hyperswarm://swarmkey -- mini-rpc over hyperswarm streams
 
+// Trust is used to decide if we want to connect to another peer or not.
+// It's mostly about protecting your IP address.
 enum PeerTrust {
-    Trusted = 'Trusted',  // manually added peers
+    Trusted = 'Trusted',  // manually user-added peers
     Unknown = 'Unknown',  // auto-discovered peers, e.g. bonjour, hyperswarm
-    Blocked = 'Blocked',  // manually blocked peers
+    Blocked = 'Blocked',  // manually user-blocked peers
 }
 
+// What we know and remember about a peer
 interface PeerInfo {
     readonly peerUrl: PeerUrl,
-    peerLastSeen: number | null,  // microseconds
+
+    // can be modified by user
     trust: PeerTrust,
+
+    // should be readonly by users
+    peerLastSeen: number | null,  // microseconds
 }
 let defaultPeerInfo: Partial<PeerInfo> = {
-    peerLastSeen: null,
     trust: PeerTrust.Unknown,
+    peerLastSeen: null,
 }
 
 //================================================================================
 // PEER-WORKSPACE RELATIONSHIPS
 
+// For each combination of a peer and a workspace, there is this relationship:
 interface PeerWorkspaceRelationship {
-    // for each combination of a peer and a workspace, there is this relationship.
     readonly peerUrl: PeerUrl,
     readonly workspaceAddress: WorkspaceAddress,
 
     // these can be set by users of the API:
-    allowSync: boolean,
-    syncGoal: SyncMode,  // this can be set by users of the API
+    allowSync: boolean,  // does the user want this workspace to be saved to that peer?
+    syncGoal: SyncMode,  // e.g. if you want sync to stop, set a syncGoal of SyncState.Stopped
 
     // these should be readonly from the users side, only set from inside the class:
-    currentSyncState: SyncMode,
-    lastBulkSyncCompletionTime: number | null,  // microseconds.  0 = never
+    currentSyncState: SyncMode,  // what the sync is actually doing right now
+    lastBulkSyncCompletionTime: number | null,  // microseconds
 }
 let defaultRelationship: Partial<PeerWorkspaceRelationship> = {
     allowSync: false,
@@ -60,14 +84,34 @@ let defaultRelationship: Partial<PeerWorkspaceRelationship> = {
     lastBulkSyncCompletionTime: null,
 }
 
+//================================================================================
+// POLICY FOR THIS PEER
+
+// This is about controlling the automated decisions that our peer makes
+// related to blocking, trust, accepting new workspaces from others, etc.
+//
+// This is like a config file, to be used when starting up a peer.
+// Peer owners will make these choices.
+// These values will not change while a peer is running unless the peer owner
+// changes them through some kind of web administration interface.
+
 interface PeerPolicy {
+    // Only accept new workspaces from ... nobody, Trusted, or Unknown peers.
     peerTrustLevelNeededToPushNewWorkspacesToMe: null | PeerTrust,
-    syncWithUnknownPeers: boolean,  // we always sync with Trusted peers, but what about Unknown peers?
+
+    // We always sync with Trusted peers, but what about Unknown peers?
+    // Unknown peers are typically auto-discovered and we might not want them to
+    // know our IP address.
+    syncWithUnknownPeers: boolean,
+
+    // Users can also configure lists of blocked/allowed workspaces and peers,
+    // for moderation purposes.
 
     blockedWorkspaces: WorkspaceAddress[],
-    allowedWorkspaces: WorkspaceAddress[],
-    blockedPeers: PeerUrl[],
-    trustedPeers: PeerUrl[],
+    allowedWorkspaces: WorkspaceAddress[],  // if this is set, only these are allowed and nothing else
+
+    blockedPeers: PeerUrl[],  // these peers start off blocked
+    trustedPeers: PeerUrl[],  // these peers start off trusted
 };
 
 //================================================================================
@@ -78,9 +122,13 @@ interface EarthstarPeer {
      *  - holding multiple workspace Storage instances (only one per workspace address)
      *  - discovering and remembering other peers
      *      - remembering our trust of other peers (trusted / unknown / blocked)
-     *  - remembering which pubs should be synced with which peers
+     *  - remembering which peers should be synced with which workspaces
      *  - managing syncing (starting, stopping, etc)
-     *  - remembering policy options about who can push new workspaces to us, etc
+     *  - remembering policy options
+     *      - blocking, trust
+     *      - accept new workspaces from others?
+     *      - etc
+     *  - having easy methods for UI actions like "accept invitation" etc
      */
 
     //------------------------------------------------------------
@@ -89,11 +137,14 @@ interface EarthstarPeer {
 
     //------------------------------------------------------------
     // STATE WE NEED TO PERSIST
+
     // storages are responsible for storing their own data
     // but we have to remember the list of storages and how to instantiate them
     _storages: Record<WorkspaceAddress, IStorageAsync>;
+
     // list of all peers and their info, of all trust levels
     _peers: Record<PeerUrl, PeerInfo>;
+
     // matrix of relationships between workspaces and peers
     // e.g. which peers are allowed to sync with which workspaces
     _peersAndWorkspaces: Record<PeerUrl, Record<WorkspaceAddress, PeerWorkspaceRelationship>>;
@@ -101,7 +152,8 @@ interface EarthstarPeer {
     //------------------------------------------------------------
     // API FOR LOCAL USAGE
 
-    close(): void; // stop all syncing, close() all storages, make sure all state is saved.
+    close(): void; // stop all syncing, close() all storages, make sure all state is saved, goodbye.
+    isClosed(): boolean;
 
     listWorkspaces(): WorkspaceAddress[];
     addWorkspace(storage: IStorageAsync): void;
@@ -110,12 +162,10 @@ interface EarthstarPeer {
 
     listPeerInfos(): PeerInfo[];
     getPeerInfo(peerUrl: PeerUrl): PeerInfo;
-
-    approvePeer(peerUrl: PeerUrl): void;
-    unapprovePeer(peerUrl: PeerUrl): void;
+    setPeerTrust(peerUrl: PeerUrl, trust: PeerTrust): void;
 
     //------------------------------------------------------------
-    // pubs and workspaces have a many-to-many relationship, like
+    // peers and workspaces have a many-to-many relationship, like
     // they're in a big 2d table.  Each cell of the table holds
     // the relationship between that peer and that workspace.
 
@@ -129,9 +179,13 @@ interface EarthstarPeer {
 
     // read relationship
     getPeerWorkspaceRelationship(peerUrl: PeerUrl, workspaceAddress: WorkspaceAddress): PeerWorkspaceRelationship;
+
     // modify relationships by changing syncGoal or allowSync
     setPeerWorkspaceRelationship(peerUrl: PeerUrl, workspaceAddress: WorkspaceAddress, relationship: Partial<PeerWorkspaceRelationship>): void;
+
+    // invites
     acceptInvite(invite: string): void;
+    generateInvite(workspaceAddress: WorkspaceAddress, peerUrls: PeerUrl[]): string;
 
     // easily stop or start all the syncing at once
     setAllSyncGoals(syncGoal: SyncMode): void;
@@ -140,12 +194,10 @@ interface EarthstarPeer {
     setPeerPolicy(policy: PeerPolicy): void;
     getPeerPolicy(): PeerPolicy;
 
-    //------------------------------------------------------------
-    // TODO
-    //  policy about allowing remote peers to push new workspaces to us or not
-
     /**
-     * EVENTS
+     * EVENTS: TODO
+     *  should be able to subscribe to any of these events:
+     * 
      *      change to peer policy
      * 
      *      on new workspace (locally added)
@@ -174,13 +226,13 @@ interface EarthstarPeer {
      *      on EarthstarPeer did close
      */
 
-
     //------------------------------------------------------------
     // API FOR RPC WITH OTHER PEERS
 
-    // safe discovery of mutually known workspaces
-
-    // the actual sync protocol
+    // This will be a set of methods exposed over mini-rpc to other peers.
+    // - Safe discovery of mutually known workspaces without revealing the rest
+    // - The actual sync protocol for one workspace at a time
+    // - A way to know if your docs have successfully synced off your computer or not, and to how many peers
 
 }
 
