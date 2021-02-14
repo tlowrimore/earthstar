@@ -28,6 +28,7 @@
     "test-coverage": "npm test -- --coverage-report=lcov",
     "test-bus": "tap -Rspecy --jobs=1 build/test/bus.test.js",
     "test-crypto": "tap -Rspecy --jobs=1 build/test/crypto.test.js",
+    "test-kvStore": "tap -Rspecy --jobs=1 build/test/kvStore.test.js",
     "test-detRandom": "tap -Rspecy --jobs=1 build/test/detRandom.test.js",
     "test-emitter": "tap -Rspecy --jobs=1 build/test/emitter.test.js",
     "test-extras": "tap -Rspecy --jobs=1 build/test/extras.test.js",
