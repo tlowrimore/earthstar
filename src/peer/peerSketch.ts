@@ -21,6 +21,7 @@ import { WorkspaceAddress } from '../util/types';
 
 // States that a peer can be in while it's syncing with another peer
 enum SyncMode {
+    Never = 'Never',  // never connect
     Stopped = 'Stopped',  // not connected
     Connecting = 'Connecting',  // establishing a connection
     ConnectedAndIdle = 'ConnectedAndIdle',  // net connection is open but nothing is happening
@@ -52,12 +53,17 @@ interface PeerInfo {
 
     // can be modified by user
     trust: PeerTrust,
+    workspacesToSyncWithThisPeer: WorkspaceAddress[],
 
     // should be readonly by users
+    commonWorkspaces: null | WorkspaceAddress[],  // workspaces we have in common with this peer, or null if unknown
     peerLastSeen: number | null,  // microseconds
 }
 let defaultPeerInfo: Partial<PeerInfo> = {
     trust: PeerTrust.Unknown,
+    workspacesToSyncWithThisPeer: [],
+
+    commonWorkspaces: null,
     peerLastSeen: null,
 }
 
@@ -70,7 +76,6 @@ interface PeerWorkspaceRelationship {
     readonly workspaceAddress: WorkspaceAddress,
 
     // these can be set by users of the API:
-    allowSync: boolean,  // does the user want this workspace to be saved to that peer?
     syncGoal: SyncMode,  // e.g. if you want sync to stop, set a syncGoal of SyncState.Stopped
 
     // these should be readonly from the users side, only set from inside the class:
@@ -78,7 +83,6 @@ interface PeerWorkspaceRelationship {
     lastBulkSyncCompletionTime: number | null,  // microseconds
 }
 let defaultRelationship: Partial<PeerWorkspaceRelationship> = {
-    allowSync: false,
     syncGoal: SyncMode.Stopped,
     currentSyncState: SyncMode.Stopped,
     lastBulkSyncCompletionTime: null,
@@ -96,10 +100,11 @@ let defaultRelationship: Partial<PeerWorkspaceRelationship> = {
 // changes them through some kind of web administration interface.
 
 interface PeerPolicy {
-    // Only accept new workspaces from ... nobody, Trusted, or Unknown peers.
-    peerTrustLevelNeededToPushNewWorkspacesToMe: null | PeerTrust,
+    // Only accept new workspaces from ... nobody, Trusted, or Unknown (& Trusted) peers.
+    acceptNewWorkspacesFrom: null | PeerTrust,
 
-    // We always sync with Trusted peers, but what about Unknown peers?
+    // We always sync with Trusted peers who share our workspaces,
+    // but what about Unknown peers?
     // Unknown peers are typically auto-discovered and we might not want them to
     // know our IP address.
     syncWithUnknownPeers: boolean,
@@ -147,7 +152,25 @@ interface EarthstarPeer {
 
     // matrix of relationships between workspaces and peers
     // e.g. which peers are allowed to sync with which workspaces
-    _peersAndWorkspaces: Record<PeerUrl, Record<WorkspaceAddress, PeerWorkspaceRelationship>>;
+    _peerWorkspaceRelationships: Record<PeerUrl, Record<WorkspaceAddress, PeerWorkspaceRelationship>>;
+
+    //------------------------------------------------------------
+    // API FOR PERSISTING STATE
+
+    // The user of EarthstarPeer has to provide some persistence functions
+    // so the peer can save its state.
+    // This is a super basic key-value interface.
+    setPersistence(methods: {
+        get: (key: string) => Promise<string | undefined>,
+        set: (key: string, value: string) => void,
+        listKeys: () => Promise<string[]>,
+        deleteKey: (key: string) => Promise<void>,
+        deleteAll: () => Promise<void>,
+    }): void;
+    // Notify the peer that the data in the persisted state has changed
+    // (e.g. was saved in another tab)
+    // This should not be called as a result of actions in this same tab.
+    onPersistenceChangeFromElsewhere(key: string, value: string | undefined): void;
 
     //------------------------------------------------------------
     // API FOR LOCAL USAGE
