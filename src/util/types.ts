@@ -41,6 +41,13 @@ export class StorageIsClosedError extends EarthstarError {
         this.name = 'StorageIsClosedError';
     }
 }
+/** An IEarthstarPeer instance was used after close() was called on it. */
+export class PeerIsClosedError extends EarthstarError {
+    constructor(message?: string) {
+        super(message || 'a Peer instance was used after being closed');
+        this.name = 'PeerIsClosed';
+    }
+}
 export class NotFoundError extends EarthstarError {
     constructor(message?: string) {
         super(message || 'not found');
