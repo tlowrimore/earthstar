@@ -1,5 +1,5 @@
 import {
-    PeerIsClosedError,
+    PeerLifecycleError,
     WorkspaceAddress
 } from '../util/types';
 import { IStorageAsync } from '../storage/storageTypes';
@@ -85,7 +85,7 @@ interface IEarthstarPeer {
     // If you want to sync between two local Storages of the same worksace,
     // e.g. one in memory and one in sqlite,
     // make two Peers.
-    addWorkspace(storage: IStorageAsync): void;
+    addWorkspace(storage: IStorageAsync): Promise<void>;
     getWorkspaceStorage(workspaceAddress: WorkspaceAddress): IStorageAsync | undefined;
     listWorkspaces(): WorkspaceAddress[];
     listStorages(): IStorageAsync[];
@@ -94,24 +94,65 @@ interface IEarthstarPeer {
     //------------------------------------------------------------
     // PEERS
 
+    addPeer(peerUrl: PeerUrl): Promise<void>;
+    getPeerInfo(peerUrl: PeerUrl): PeerInfo | undefined;
     listPeerUrls(): PeerUrl[];
     listPeerInfos(): PeerInfo[];
-    getPeerInfo(peerUrl: PeerUrl): PeerInfo | undefined;
-    upsertPeer(peerUrl: PeerUrl): Promise<void>;
-    setPeerTrust(peerUrl: PeerUrl, trust: PeerTrust): Promise<void>;
-    setWorkspacesToSyncWithPeer(peerUrl: PeerUrl, workspaceAddresses: WorkspaceAddress[]): Promise<void>;
+    updatePeer(peerUrl: PeerUrl, partialInfo: Partial<PeerInfo>): Promise<void>;
     removePeer(peerUrl: PeerUrl): Promise<void>;
 
     //------------------------------------------------------------
     // CLOSING
 
-    close(): void;
+    close(): Promise<void>;
     isClosed(): boolean;
 }
 
 class EarthstarPeer implements IEarthstarPeer {
+
+    // A peer goes through a lifecycle of 3 states.
+    // After being constructed it has to be "hatched" before you can used it.
+    // Then you can close it, and it stays closed.
+    //
+    // State transition diagram:
+    //
+    //   notYetHatched --> ready --> closed
+    //          \                      ^
+    //           \                    /
+    //            \------------------/
+    //
+    // constructor()
+    //
+    //      state: "notYetHatched"
+    //      You can't call any methods except hatch() and close().
+    //
+    // await peer.hatch()
+    //
+    //      state: "ready"
+    //      Now you can call all the peer's methods.
+    //
+    // await peer.close()
+    //
+    //      state: "closed"
+    //      You can't call any methods except close(),
+    //       which does nothing since it's already closed.
+    //      The peer is permanently closed and can't be opened again.
+    //      Make a new one if you want to try again.
+    //
+    // Calling methods when the lifecycle disallows it will throw a PeerLifecycleError.
+    //
+    // (For convenience, these special methods can always be called no matter the state:)
+    //
+    //      close()
+    //      isReady()
+    //      isClosed()
+    //
+
+    _lifecycle: 'notYetHatched' | 'ready' | 'closed' = 'notYetHatched';
+
     _kvStore: IKvStore;  // for storing the peer state and settings
-    _isClosed: boolean = false;
+
+    // state to persist
     _storages: Record<WorkspaceAddress, IStorageAsync> = {};  // one IStorage for each workspace
     _peers: Record<PeerUrl, PeerInfo> = {};
 
@@ -123,7 +164,31 @@ class EarthstarPeer implements IEarthstarPeer {
         // There's too many ways to find them (in localStorage?  sqlite files in a directory?)
         // and too many different constructor options for the Peer to keep track of.
 
-        // TODO: load _peers from kvstore
+        // a Peer must be hatched before being used.
+        // call "await peer.hatch()".
+    }
+
+    // Users must call this after instantiating the peer, and must
+    // await it before doing anything else.
+    // It loads initial data and does some async setup, so it can't be part
+    // of the constructor.
+    async hatch() {
+        if (this._lifecycle !== 'notYetHatched') {
+            throw new PeerLifecycleError(`Tried to hatch a peer that was already ${this._lifecycle}`);
+        }
+
+        // TODO: load _storages from kvStore??? see above note in the constructor
+
+        // load peer data
+        let existingPeerData = await this._kvStore.get('-peers');
+        if (existingPeerData !== undefined) {
+            try {
+                this._peers = JSON.parse(existingPeerData);
+            } catch (err) {
+                console.error('error loading initial Peer._peers data from kvstore', err);
+            }
+        }
+        this._lifecycle = 'ready';
     }
 
     //------------------------------------------------------------
@@ -144,27 +209,45 @@ class EarthstarPeer implements IEarthstarPeer {
     //------------------------------------------------------------
     // WORKSPACES
 
-    addWorkspace(storage: IStorageAsync): void {
-        this._assertNotClosed();
+    async _saveWorkspaces(): Promise<void> {
+        // NOTE: we're saving the list of workspaces into
+        // the Peer storage, but I'm not sure why yet.
+        // We don't read this info at startup.
+        // And each IStorage is responsible for its own
+        // persistence.
+
+        // look up the class of each workspace storage
+        let wsAndClass: Record<string, string> = {}
+        for (let storage of this.listStorages()) {
+            wsAndClass[storage.workspace] = storage.constructor.name;
+        }
+        // save it
+        this._kvStore.set('-workspaces', JSON.stringify(wsAndClass, null, 4));
+    }
+
+    async addWorkspace(storage: IStorageAsync): Promise<void> {
+        this._assertReady();
         this._storages[storage.workspace] = storage;
+        await this._saveWorkspaces();
     }
     getWorkspaceStorage(workspaceAddress: WorkspaceAddress): IStorageAsync | undefined {
-        this._assertNotClosed();
+        this._assertReady();
         return this._storages[workspaceAddress]
     }
     listWorkspaces(): WorkspaceAddress[] {
-        this._assertNotClosed();
+        this._assertReady();
         return sorted(Object.keys(this._storages));
     }
     listStorages(): IStorageAsync[] {
-        this._assertNotClosed();
+        this._assertReady();
         let keys = this.listWorkspaces();
         return keys.map(key => this._storages[key]);
     }
     async removeAndCloseWorkspace(workspaceAddress: WorkspaceAddress, opts?: { delete: boolean} ): Promise<void> {
-        this._assertNotClosed();
+        this._assertReady();
         let storage = this._storages[workspaceAddress];
         await storage.close(opts);
+        await this._saveWorkspaces();
     }
 
     //------------------------------------------------------------
@@ -174,24 +257,11 @@ class EarthstarPeer implements IEarthstarPeer {
         this._kvStore.set('-peers', JSON.stringify(this._peers, null, 4));
     }
 
-    listPeerUrls(): PeerUrl[] {
-        this._assertNotClosed();
-        return sorted(Object.keys(this._peers));
-    }
-    listPeerInfos(): PeerInfo[] {
-        this._assertNotClosed();
-        let urls = this.listPeerUrls();
-        return urls.map(url => this._peers[url]);
-    }
-    getPeerInfo(peerUrl: PeerUrl): PeerInfo | undefined {
-        this._assertNotClosed();
-        return this._peers[peerUrl];
-    }
     // Ensure a peer exists in our records.
     // If it's new, give it default trust etc.
     // If it's existing, just leave it alone.
-    async upsertPeer(peerUrl: PeerUrl): Promise<void> {
-        this._assertNotClosed();
+    async addPeer(peerUrl: PeerUrl): Promise<void> {
+        this._assertReady();
         if (this._peers[peerUrl] === undefined) {
             this._peers[peerUrl] = {
                 ...DEFAULT_PEER_INFO,
@@ -200,31 +270,37 @@ class EarthstarPeer implements IEarthstarPeer {
             await this._savePeers();
         }
     }
-    async setPeerTrust(peerUrl: PeerUrl, trust: PeerTrust): Promise<void> {
-        this._assertNotClosed();
+    getPeerInfo(peerUrl: PeerUrl): PeerInfo | undefined {
+        this._assertReady();
+        return this._peers[peerUrl];
+    }
+    listPeerUrls(): PeerUrl[] {
+        this._assertReady();
+        return sorted(Object.keys(this._peers));
+    }
+    listPeerInfos(): PeerInfo[] {
+        this._assertReady();
+        let urls = this.listPeerUrls();
+        return urls.map(url => this._peers[url]);
+    }
+    // Update the state of a PeerInfo.
+    // You can supply any subset of the keys in the PeerInfo type.
+    async updatePeer(peerUrl: PeerUrl, partialInfo: Partial<PeerInfo>): Promise<void> {
+        this._assertReady();
         if (this._peers[peerUrl] === undefined) {
             throw new Error(`can't set trust of unknown peer "${peerUrl}"`);
         }
         this._peers[peerUrl] = {
             ...this._peers[peerUrl],
-            trust,
+            ...partialInfo,
         }
         await this._savePeers();
     }
-    async setWorkspacesToSyncWithPeer(peerUrl: PeerUrl, workspaceAddresses: WorkspaceAddress[]): Promise<void> {
-        this._assertNotClosed();
-        if (this._peers[peerUrl] === undefined) {
-            throw new Error(`can't set workspaces of unknown peer "${peerUrl}"`);
-        }
-        this._peers[peerUrl] = {
-            ...this._peers[peerUrl],
-            workspacesToSyncWithPeer: workspaceAddresses,
-        }
-        await this._savePeers();
-    }
-    // Remove a peer, even if we don't even know about it, just return nothing.
+    // Remove a peer.
+    // This is even safe to do if we don't know the peer at all, it will
+    // always just return nothing.
     async removePeer(peerUrl: PeerUrl): Promise<void> {
-        this._assertNotClosed();
+        this._assertReady();
         delete this._peers[peerUrl];
         await this._savePeers();
     }
@@ -232,12 +308,16 @@ class EarthstarPeer implements IEarthstarPeer {
     //------------------------------------------------------------
     // CLOSING
 
-    close() {
-        this._isClosed = true;
+    _assertReady() {
+        if (this._lifecycle !== 'ready') {
+            throw new PeerLifecycleError(`Peer methods can only be called when it's "ready", but it was ${this._lifecycle}`);
+        }
     }
-    isClosed() { return this._isClosed; }
-    _assertNotClosed() {
-        if (this._isClosed) { throw new PeerIsClosedError(); }
-    }
-}
 
+    async close(): Promise<void> {
+        this._lifecycle = 'closed';
+    }
+    isReady() { return this._lifecycle === 'ready'; }
+    isClosed() { return this._lifecycle === 'closed'; }
+
+}
