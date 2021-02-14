@@ -35,15 +35,15 @@ export class KvStoreMemory implements IKvStore {
 
 export class KvStoreJsonFile implements IKvStore {
     _data: Record<string, string> = {};
-    _fn: string;
+    _filename: string;
     constructor(fn: string) {
-        this._fn = fn;
-        if (fs.existsSync(this._fn)) {
-            this._data = JSON.parse(fs.readFileSync(this._fn, 'utf-8'));
+        this._filename = fn;
+        if (fs.existsSync(this._filename)) {
+            this._data = JSON.parse(fs.readFileSync(this._filename, 'utf-8'));
         }
     }
     _save(): void {
-        fs.writeFileSync(this._fn, JSON.stringify(this._data, null, 4), 'utf-8');
+        fs.writeFileSync(this._filename, JSON.stringify(this._data, null, 4), 'utf-8');
     }
     async get(key: string): Promise<string | undefined> {
         return Promise.resolve(this._data[key]);
