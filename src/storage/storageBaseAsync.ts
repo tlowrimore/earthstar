@@ -1,5 +1,7 @@
 import { deepEqual } from 'fast-equals';
 
+import { Mutex } from 'concurrency-friends';
+
 import {
     AuthorAddress,
     AuthorKeypair,
@@ -37,7 +39,11 @@ export abstract class StorageBaseAsync implements IStorageAsync {
     _validatorMap: {[format: string]: IValidator};
     _discardInterval: any | null = null;
 
+    // any method that can add/delete/modify documents must happen inside the writeLock.
+    writeLock: Mutex<any>;
+
     constructor(validators: IValidator[], workspace: WorkspaceAddress) {
+        this.writeLock = new Mutex<any>();
 
         // when subclassing this class, you will need to call
         //    super(validators, workspace)
@@ -108,6 +114,9 @@ export abstract class StorageBaseAsync implements IStorageAsync {
         if (this._isClosed) { throw new StorageIsClosedError(); }
     }
 
+    // these don't need to happen inside the lock
+    // because they are not about documents, just config,
+    // which is a separate dataset
     abstract setConfig(key: string, content: string): Promise<void>;
     abstract getConfig(key: string): Promise<string | undefined>;
     abstract deleteConfig(key: string): Promise<void>;
@@ -164,72 +173,80 @@ export abstract class StorageBaseAsync implements IStorageAsync {
     }
 
     // PUT DATA IN
+
+    // _upsert does not need to be in a lock;
+    // the functions that call it will be in the lock already;
     abstract _upsertDocument(doc: Document): Promise<void>;
+
+    // This is in the lock because we have to do a "get, check, write" pattern
     async ingestDocument(doc: Document, fromSessionId: string): Promise<WriteResult | ValidationError> {
-        this._assertNotClosed();
+        let [writeResultOrErr, isLatest] = await this.writeLock.run(async () => {
+            this._assertNotClosed();
 
-        let now = this._now || (Date.now() * 1000);
+            let now = this._now || (Date.now() * 1000);
 
-        // validate doc
-        let validator = this._validatorMap[doc.format];
-        if (validator === undefined) {
-            return new ValidationError(`ingestDocument: unrecognized format ${doc.format}`);
-        }
+            // validate doc
+            let validator = this._validatorMap[doc.format];
+            if (validator === undefined) {
+                return [new ValidationError(`ingestDocument: unrecognized format ${doc.format}`), null];
+            }
 
-        let err = validator.checkDocumentIsValid(doc, now);
-        if (isErr(err)) { return err; }
+            let err = validator.checkDocumentIsValid(doc, now);
+            if (isErr(err)) { return [err, null]; }
 
-        // Only accept docs from the same workspace.
-        if (doc.workspace !== this.workspace) {
-            return new ValidationError(`ingestDocument: can't ingest doc from different workspace`);
-        }
+            // Only accept docs from the same workspace.
+            if (doc.workspace !== this.workspace) {
+                return [new ValidationError(`ingestDocument: can't ingest doc from different workspace`), null];
+            }
 
-        // BEGIN LOCK
+            // get existing doc from same author, same path, to decide if the incoming one is newer
+            let existingSameAuthor : Document | undefined = (await this.documents({
+                path: doc.path,
+                author: doc.author,
+                history: 'all',
+            }))[0];
 
-        // get existing doc from same author, same path, to decide if the incoming one is newer
-        let existingSameAuthor : Document | undefined = (await this.documents({
-            path: doc.path,
-            author: doc.author,
-            history: 'all',
-        }))[0];
+            // there might be an existingSameAuthor that's ephemeral and has expired.
+            // if so, it will not have been returned from this.documents().
+            // we'll just overwrite it with upsertDocument() as if it wasn't there.
 
-        // there might be an existingSameAuthor that's ephemeral and has expired.
-        // if so, it will not have been returned from this.documents().
-        // we'll just overwrite it with upsertDocument() as if it wasn't there.
+            // Compare timestamps.
+            // Compare signature to break timestamp ties.
+            // Note this is based only on timestamp and does not care about deleteAfter
+            // (e.g. the lifespan of ephemeral documents doesn't matter when comparing them)
+            // TODO: can't compare arrays like this, use an array comparison function
+            if (existingSameAuthor !== undefined
+                && [doc.timestamp, doc.signature]
+                <= [existingSameAuthor.timestamp, existingSameAuthor.signature]
+                ) {
+                // incoming doc is older or identical.  ignore it.
+                return [WriteResult.Ignored, null];
+            }
 
-        // Compare timestamps.
-        // Compare signature to break timestamp ties.
-        // Note this is based only on timestamp and does not care about deleteAfter
-        // (e.g. the lifespan of ephemeral documents doesn't matter when comparing them)
-        // TODO: can't compare arrays like this, use an array comparison function
-        if (existingSameAuthor !== undefined
-            && [doc.timestamp, doc.signature]
-            <= [existingSameAuthor.timestamp, existingSameAuthor.signature]
-            ) {
-            // incoming doc is older or identical.  ignore it.
-            return WriteResult.Ignored;
-        }
+            // upsert, replacing old doc if there is one
+            await this._upsertDocument(doc);
 
-        // upsert, replacing old doc if there is one
-        await this._upsertDocument(doc);
+            // read it again to see if it's the new latest doc
+            let latestDoc = await this.getDocument(doc.path);
+            let isLatest = deepEqual(doc, latestDoc);
 
-        // read it again to see if it's the new latest doc
-        let latestDoc = await this.getDocument(doc.path);
-        let isLatest = deepEqual(doc, latestDoc);
-
-        // END LOCK
-
-        // Send events.
-        this.onWrite.send({
-            kind: 'DOCUMENT_WRITE',
-            document: doc,
-            fromSessionId: fromSessionId,
-            isLocal: fromSessionId === this.sessionId,
-            isLatest: isLatest,
+            return [WriteResult.Accepted, isLatest];
         });
-
-        return WriteResult.Accepted;
+        // we want to end the lock as early as possible.
+        // we can send the events outside of the lock.
+        if (writeResultOrErr === WriteResult.Accepted) {
+            this.onWrite.send({
+                kind: 'DOCUMENT_WRITE',
+                document: doc,
+                fromSessionId: fromSessionId,
+                isLocal: fromSessionId === this.sessionId,
+                isLatest: isLatest,
+            });
+        }
+        return writeResultOrErr;
     }
+    // TODO: this needs to be in the lock
+    // but recursively...
     async set(keypair: AuthorKeypair, docToSet: DocToSet): Promise<WriteResult | ValidationError> {
         this._assertNotClosed();
 
@@ -297,39 +314,46 @@ export abstract class StorageBaseAsync implements IStorageAsync {
         return result;
     }
 
+    // these need to be in the lock
     abstract forgetDocuments(query: QueryForForget): Promise<void>;
     abstract discardExpiredDocuments(): Promise<void>;
 
     // CLOSE
     isClosed(): boolean { return this._isClosed; }
 
+    // this does not need to be in the lock
+    // because it's called by close() which is holding the lock
     abstract _close(opts: { delete: boolean }): Promise<void>;
 
+    // this needs to be in the lock
     async close(opts?: { delete: boolean }): Promise<void> {
-        logger.log(`🚫 CLOSE ${this.workspace} 🚫`);
+        await this.writeLock.run(async () => {
+            logger.log(`🚫 CLOSE ${this.workspace} 🚫`);
 
-        if (this._isClosed) {
-            logger.log('🚫 ...already closed; returning.');
-            return;
-        }
-        logger.log('🚫 ...sending onWillClose');
-        this.onWillClose.send(undefined);
+            if (this._isClosed) {
+                logger.log('🚫 ...already closed; returning.');
+                return;
+            }
+            logger.log('🚫 ...sending onWillClose');
+            this.onWillClose.send(undefined);
 
-        this._isClosed = true;
+            this._isClosed = true;
 
-        logger.log('🚫 ...stopping ephemeral deletion thread');
-        // stop the hourly discard thread
-        if (this._discardInterval !== null) {
-            clearInterval(this._discardInterval);
-            this._discardInterval = null;
-        }
+            logger.log('🚫 ...stopping ephemeral deletion thread');
+            // stop the hourly discard thread
+            if (this._discardInterval !== null) {
+                clearInterval(this._discardInterval);
+                this._discardInterval = null;
+            }
 
-        logger.log('🚫 ...calling subclass _close()');
-        if (opts?.delete === true) {
-            logger.log('🚫 ...and will delete.');
-        }
-        await this._close(opts || { delete: false });
+            logger.log('🚫 ...calling subclass _close()');
+            if (opts?.delete === true) {
+                logger.log('🚫 ...and will delete.');
+            }
+            await this._close(opts || { delete: false });
 
+        });
+        // this can happen after the lock is released
         logger.log('🚫 ...sending onDidClose');
         this.onDidClose.send(undefined);
         logger.log('🚫 done.');
