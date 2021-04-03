@@ -25,7 +25,7 @@ import Logger from '../util/log';
 
 let logger = new Logger('StorageBase');
 
-export abstract class StorageBase implements IStorageAsync {
+export abstract class StorageBaseAsync implements IStorageAsync {
     workspace : WorkspaceAddress;
     readonly sessionId: string;
     _now: number | null = null;
