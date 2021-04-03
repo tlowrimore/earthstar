@@ -13,7 +13,7 @@ import {
     isErr
 } from '../util/types';
 import {
-    IStorage,
+    IStorageAsync,
     WriteEvent,
 } from './storageTypes';
 import { Query, QueryForForget, QueryNoLimitBytes } from './query';
@@ -25,7 +25,7 @@ import Logger from '../util/log';
 
 let logger = new Logger('StorageBase');
 
-export abstract class StorageBase implements IStorage {
+export abstract class StorageBase implements IStorageAsync {
     workspace : WorkspaceAddress;
     readonly sessionId: string;
     _now: number | null = null;
@@ -108,10 +108,10 @@ export abstract class StorageBase implements IStorage {
         if (this._isClosed) { throw new StorageIsClosedError(); }
     }
 
-    abstract setConfig(key: string, content: string): void;
-    abstract getConfig(key: string): string | undefined;
-    abstract deleteConfig(key: string): void;
-    abstract deleteAllConfig(): void;
+    abstract setConfig(key: string, content: string): Promise<void>;
+    abstract getConfig(key: string): Promise<string | undefined>;
+    abstract deleteConfig(key: string): Promise<void>;
+    abstract deleteAllConfig(): Promise<void>;
 
     // TODO
     // config get/set
@@ -120,19 +120,19 @@ export abstract class StorageBase implements IStorage {
     // close and remove all
 
     // GET DATA OUT
-    abstract documents(query?: Query): Document[];
-    contents(query?: Query): string[] {
+    abstract documents(query?: Query): Promise<Document[]>;
+    async contents(query?: Query): Promise<string[]> {
         this._assertNotClosed();
-        return this.documents(query).map(doc => doc.content);
+        return (await this.documents(query)).map(doc => doc.content);
     }
-    authors(): AuthorAddress[] {
+    async authors(): Promise<AuthorAddress[]> {
         // return all authors, even ones that only occur back in the history
         this._assertNotClosed();
-        let docs = this.documents({ history: 'all' });
+        let docs = await this.documents({ history: 'all' });
         let authors = docs.map(doc => doc.author);
         return sorted(uniq(authors));
     }
-    paths(q?: QueryNoLimitBytes): string[] {
+    async paths(q?: QueryNoLimitBytes): Promise<string[]> {
         this._assertNotClosed();
         let query = cleanUpQuery(q || {});
 
@@ -143,7 +143,7 @@ export abstract class StorageBase implements IStorage {
         // remove limit
         let queryNoLimit = { ...query, limit: undefined, limitBytes: undefined };
         // do query and get unique paths
-        let docs = this.documents(queryNoLimit);
+        let docs = await this.documents(queryNoLimit);
         let paths = sorted(uniq(docs.map(doc => doc.path)));
         // re-apply limit
         if (query.limit !== undefined) {
@@ -152,18 +152,20 @@ export abstract class StorageBase implements IStorage {
         return paths;
     }
 
-    getDocument(path: string): Document | undefined {
+    async getDocument(path: string): Promise<Document | undefined> {
         this._assertNotClosed();
-        return this.documents({ path: path, limit: 1, history: 'latest' })[0];
+        let docs = await this.documents({ path: path, limit: 1, history: 'latest' });
+        return docs[0];
     }
-    getContent(path: string): string | undefined {
+    async getContent(path: string): Promise<string | undefined> {
         this._assertNotClosed();
-        return this.getDocument(path)?.content;
+        let doc = await this.getDocument(path);
+        return doc?.content;
     }
 
     // PUT DATA IN
-    abstract _upsertDocument(doc: Document): void;
-    ingestDocument(doc: Document, fromSessionId: string): WriteResult | ValidationError {
+    abstract _upsertDocument(doc: Document): Promise<void>;
+    async ingestDocument(doc: Document, fromSessionId: string): Promise<WriteResult | ValidationError> {
         this._assertNotClosed();
 
         let now = this._now || (Date.now() * 1000);
@@ -185,11 +187,11 @@ export abstract class StorageBase implements IStorage {
         // BEGIN LOCK
 
         // get existing doc from same author, same path, to decide if the incoming one is newer
-        let existingSameAuthor : Document | undefined = this.documents({
+        let existingSameAuthor : Document | undefined = (await this.documents({
             path: doc.path,
             author: doc.author,
             history: 'all',
-        })[0];
+        }))[0];
 
         // there might be an existingSameAuthor that's ephemeral and has expired.
         // if so, it will not have been returned from this.documents().
@@ -209,10 +211,10 @@ export abstract class StorageBase implements IStorage {
         }
 
         // upsert, replacing old doc if there is one
-        this._upsertDocument(doc);
+        await this._upsertDocument(doc);
 
         // read it again to see if it's the new latest doc
-        let latestDoc = this.getDocument(doc.path);
+        let latestDoc = await this.getDocument(doc.path);
         let isLatest = deepEqual(doc, latestDoc);
 
         // END LOCK
@@ -228,7 +230,7 @@ export abstract class StorageBase implements IStorage {
 
         return WriteResult.Accepted;
     }
-    set(keypair: AuthorKeypair, docToSet: DocToSet): WriteResult | ValidationError {
+    async set(keypair: AuthorKeypair, docToSet: DocToSet): Promise<WriteResult | ValidationError> {
         this._assertNotClosed();
 
         let now = this._now || (Date.now() * 1000);
@@ -276,7 +278,8 @@ export abstract class StorageBase implements IStorage {
             // so we can adjust the expiration timestamp too
             let lifespan: number | null = doc.deleteAfter === null ? null : (doc.deleteAfter - doc.timestamp);
 
-            let existingDocTimestamp = this.getDocument(doc.path)?.timestamp || 0;
+            let existingDoc = await this.getDocument(doc.path);
+            let existingDocTimestamp = existingDoc?.timestamp || 0;
             doc.timestamp = Math.max(doc.timestamp, existingDocTimestamp+1);
 
             if (lifespan !== null) {
@@ -288,21 +291,21 @@ export abstract class StorageBase implements IStorage {
         // sign and ingest the doc
         let signedDoc = validator.signDocument(keypair, doc);
         if (isErr(signedDoc)) { return signedDoc; }
-        let result = this.ingestDocument(signedDoc, this.sessionId);
+        let result = await this.ingestDocument(signedDoc, this.sessionId);
 
         // END LOCK
         return result;
     }
 
-    abstract forgetDocuments(query: QueryForForget): void;
-    abstract discardExpiredDocuments(): void;
+    abstract forgetDocuments(query: QueryForForget): Promise<void>;
+    abstract discardExpiredDocuments(): Promise<void>;
 
     // CLOSE
     isClosed(): boolean { return this._isClosed; }
 
-    abstract _close(opts: { delete: boolean }): void;
+    abstract _close(opts: { delete: boolean }): Promise<void>;
 
-    close(opts?: { delete: boolean }): void {
+    async close(opts?: { delete: boolean }): Promise<void> {
         logger.log(`🚫 CLOSE ${this.workspace} 🚫`);
 
         if (this._isClosed) {
@@ -325,7 +328,7 @@ export abstract class StorageBase implements IStorage {
         if (opts?.delete === true) {
             logger.log('🚫 ...and will delete.');
         }
-        this._close(opts || { delete: false });
+        await this._close(opts || { delete: false });
 
         logger.log('🚫 ...sending onDidClose');
         this.onDidClose.send(undefined);
